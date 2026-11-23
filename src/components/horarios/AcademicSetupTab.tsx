@@ -1708,7 +1708,7 @@ export function AcademicSetupTab({
                   </Label>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     className="h-7 px-2 text-xs"
                     onClick={() =>
@@ -1907,7 +1907,7 @@ export function AcademicSetupTab({
                         </Badge>
                         <Button
                           type="button"
-                          variant="outline"
+                          variant="secondary"
                           size="sm"
                           onClick={() => {
                             const firstClass = refSlots.find((s) => s.slotType === "CLASS");
