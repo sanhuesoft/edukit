@@ -1,0 +1,443 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  SCHOOL_ADMIN
+}
+
+enum LevelCode {
+  BASIC_1_4
+  BASIC_5_8
+  MEDIA_1_2
+  MEDIA_3_4
+}
+
+enum RoomType {
+  CLASSROOM
+  LAB
+  GYM
+  COMPUTER_LAB
+}
+
+enum TeacherAssignmentRole {
+  LEAD
+  CO_TEACHER
+  PIE_SUPPORT
+}
+
+enum SlotType {
+  CLASS
+  BREAK
+  LUNCH
+}
+
+enum RuleWeight {
+  HARD
+  SOFT
+}
+
+enum RuleTargetEntityType {
+  SUBJECT
+  TEACHER
+  COURSE
+  ROOM
+  GLOBAL
+}
+
+enum SchedulingRuleType {
+  TEACHER_UNAVAILABILITY
+  MAX_TEACHER_WINDOWS
+  MAX_CONSECUTIVE_TEACHER_BLOCKS
+  FIRST_LAST_BLOCK_EQUITY
+  TEACHER_DAY_COMPACTNESS
+  TEACHER_DAILY_BLOCKS_LIMIT
+  TEACHER_GUARANTEED_LUNCH_BREAK
+  SYNCED_DEPARTMENT_MEETING
+  TEACHER_CAMPUS_TRAVEL
+  SUBJECT_PREFERRED_TIME_RANGE
+  MAX_DAILY_BLOCKS_PER_SUBJECT
+  CONSECUTIVE_BLOCKS_POLICY
+  PRIORITIZE_PAIR_GROUPS
+  WEEKLY_SPREAD_BALANCE
+  NO_SAME_SUBJECT_AROUND_LUNCH
+  NO_ADJACENT_SIMILAR_SUBJECTS
+  EXTENDED_BLOCKS_POLICY
+  FIXED_SUBJECT_SLOT
+  SUBJECT_MIN_DAY_SPACING
+  MAX_DAILY_COGNITIVE_LOAD
+  NO_SUBJECT_POST_LUNCH
+  SUBJECT_PRECEDENCE
+  SHARED_ROOM_CAPACITY
+  ROOM_TRAVEL_TIME
+  ROOM_ACCESSIBILITY_FLOOR
+  ROOM_STUDENT_CAPACITY
+  ROOM_EQUIPMENT_REQUIREMENT
+  MINIMIZE_COURSE_ROOM_CHANGES
+  SYNC_GROUP_SIMULTANEITY
+  FIXED_SYNC_GROUP_SLOT
+  PIE_CO_TEACHING_SYNC
+  ALLOW_COURSE_WINDOWS
+  ROOM_ASSIGNMENT_MODE
+  LEY_20903_POLICY
+}
+
+enum ScheduleVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum NonTeachingActivityType {
+  STAFF_MEETING
+  DEPARTMENT_MEETING
+  PARENT_MEETING
+  PLANNING
+}
+
+enum ScheduleChangeActionType {
+  MOVE
+  SWAP
+  LOCK
+  UNLOCK
+  AI_APPLY
+}
+
+model School {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  rbd          String   @unique
+  commune      String
+  academicYear Int      @map("academic_year")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  users            User[]
+  teachers         Teacher[]
+  rooms            Room[]
+  bellSchedules    BellSchedule[]
+  courses          Course[]
+  subjects         Subject[]
+  schedulingRules  SchedulingRule[]
+  scheduleVersions ScheduleVersion[]
+
+  @@index([rbd])
+  @@map("schools")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  schoolId     String?  @map("school_id") @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  role         UserRole
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  school             School?             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacherProfile     Teacher?
+  scheduleChangeLogs ScheduleChangeLog[]
+
+  @@index([schoolId])
+  @@map("users")
+}
+
+model Teacher {
+  id                String   @id @default(uuid()) @db.Uuid
+  schoolId          String   @map("school_id") @db.Uuid
+  userId            String?  @unique @map("user_id") @db.Uuid
+  firstName         String   @map("first_name")
+  lastName          String   @map("last_name")
+  email             String?
+  phone             String?
+  contractHours     Int      @map("contract_hours")
+  maxTeachingBlocks Int      @map("max_teaching_blocks")
+  maxDailyHours     Int      @default(8) @map("max_daily_hours")
+  ley20903Ratio     String   @default("AUTO") @map("ley_20903_ratio")
+  colorHex          String   @default("#8721FD") @map("color_hex")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  school               School                         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  user                 User?                          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  qualifiedSubjects    TeacherQualifiedSubject[]
+  qualifiedLevels      TeacherQualifiedLevel[]
+  courseSubjects       CourseSubjectTeacher[]
+  nonTeachingActivities TeacherNonTeachingActivity[]
+
+  @@index([schoolId])
+  @@map("teachers")
+}
+
+model TeacherQualifiedSubject {
+  teacherId String @map("teacher_id") @db.Uuid
+  subjectId String @map("subject_id") @db.Uuid
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@id([teacherId, subjectId])
+  @@map("teacher_qualified_subjects")
+}
+
+model TeacherQualifiedLevel {
+  teacherId String    @map("teacher_id") @db.Uuid
+  levelCode LevelCode @map("level_code")
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@id([teacherId, levelCode])
+  @@map("teacher_qualified_levels")
+}
+
+model Room {
+  id            String   @id @default(uuid()) @db.Uuid
+  schoolId      String   @map("school_id") @db.Uuid
+  name          String
+  capacity      Int      @default(40)
+  roomType      RoomType @default(CLASSROOM) @map("room_type")
+  campus        String?
+  floor         Int      @default(1)
+  equipmentTags Json     @default("[]") @map("equipment_tags")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  school                School                       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  defaultForCourses     Course[]                     @relation("CourseDefaultRoom")
+  requiredBySubjects    Subject[]                    @relation("SubjectRequiredRoom")
+  scheduleEntries       ScheduleEntry[]
+  nonTeachingActivities TeacherNonTeachingActivity[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@map("rooms")
+}
+
+model BellSchedule {
+  id               String   @id @default(uuid()) @db.Uuid
+  schoolId         String   @map("school_id") @db.Uuid
+  name             String
+  applicableLevels Json     @default("[]") @map("applicable_levels")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  school    School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  courses   Course[]
+  timeSlots TimeSlot[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@map("bell_schedules")
+}
+
+model Course {
+  id                  String    @id @default(uuid()) @db.Uuid
+  schoolId            String    @map("school_id") @db.Uuid
+  bellScheduleId      String    @map("bell_schedule_id") @db.Uuid
+  name                String
+  code                String
+  levelCode           LevelCode @map("level_code")
+  defaultRoomId       String?   @map("default_room_id") @db.Uuid
+  studentCount        Int       @default(35) @map("student_count")
+  requiresGroundFloor Boolean   @default(false) @map("requires_ground_floor")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  school         School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  bellSchedule   BellSchedule    @relation(fields: [bellScheduleId], references: [id], onDelete: Restrict)
+  defaultRoom    Room?           @relation("CourseDefaultRoom", fields: [defaultRoomId], references: [id], onDelete: SetNull)
+  courseSubjects CourseSubject[]
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
+  @@map("courses")
+}
+
+model Subject {
+  id                String    @id @default(uuid()) @db.Uuid
+  schoolId          String    @map("school_id") @db.Uuid
+  name              String
+  code              String
+  requiresRoomType  RoomType? @map("requires_room_type")
+  requiredRoomId    String?   @map("required_room_id") @db.Uuid
+  cognitiveWeight   Int       @default(1) @map("cognitive_weight")
+  requiredEquipment String?   @map("required_equipment")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  school            School                    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  requiredRoom      Room?                     @relation("SubjectRequiredRoom", fields: [requiredRoomId], references: [id], onDelete: SetNull)
+  qualifiedTeachers TeacherQualifiedSubject[]
+  courseSubjects    CourseSubject[]
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
+  @@map("subjects")
+}
+
+model CourseSubject {
+  id                        String   @id @default(uuid()) @db.Uuid
+  courseId                  String   @map("course_id") @db.Uuid
+  subjectId                 String   @map("subject_id") @db.Uuid
+  weeklyBlocks              Int      @map("weekly_blocks")
+  requiresConsecutiveBlocks Boolean  @default(false) @map("requires_consecutive_blocks")
+  syncGroupCode             String?  @map("sync_group_code")
+  isSplitClass              Boolean  @default(false) @map("is_split_class")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  course          Course                 @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  subject         Subject                @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  teachers        CourseSubjectTeacher[]
+  scheduleEntries ScheduleEntry[]
+
+  @@index([courseId])
+  @@index([subjectId])
+  @@index([syncGroupCode])
+  @@map("course_subjects")
+}
+
+model CourseSubjectTeacher {
+  id              String                @id @default(uuid()) @db.Uuid
+  courseSubjectId String                @map("course_subject_id") @db.Uuid
+  teacherId       String                @map("teacher_id") @db.Uuid
+  role            TeacherAssignmentRole @default(LEAD)
+  assignedBlocks  Int?                  @map("assigned_blocks")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+
+  courseSubject CourseSubject @relation(fields: [courseSubjectId], references: [id], onDelete: Cascade)
+  teacher       Teacher       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([courseSubjectId, teacherId])
+  @@index([teacherId])
+  @@map("course_subject_teachers")
+}
+
+model TimeSlot {
+  id              String   @id @default(uuid()) @db.Uuid
+  bellScheduleId  String   @map("bell_schedule_id") @db.Uuid
+  dayOfWeek       Int      @map("day_of_week")
+  blockNumber     Int      @map("block_number")
+  pairGroupId     Int?     @map("pair_group_id")
+  startTime       String   @map("start_time")
+  endTime         String   @map("end_time")
+  durationMinutes Int      @map("duration_minutes")
+  slotType        SlotType @default(CLASS) @map("slot_type")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  bellSchedule          BellSchedule                 @relation(fields: [bellScheduleId], references: [id], onDelete: Cascade)
+  scheduleEntries       ScheduleEntry[]
+  nonTeachingActivities TeacherNonTeachingActivity[]
+
+  @@index([bellScheduleId, dayOfWeek, blockNumber])
+  @@map("time_slots")
+}
+
+model SchedulingRule {
+  id               String               @id @default(uuid()) @db.Uuid
+  schoolId         String               @map("school_id") @db.Uuid
+  ruleType         SchedulingRuleType   @map("rule_type")
+  weight           RuleWeight           @default(SOFT)
+  penaltyScore     Int                  @default(10) @map("penalty_score")
+  targetEntityType RuleTargetEntityType @default(GLOBAL) @map("target_entity_type")
+  targetEntityId   String?              @map("target_entity_id") @db.Uuid
+  parameters       Json                 @default("{}")
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([schoolId, ruleType])
+  @@map("scheduling_rules")
+}
+
+model ScheduleVersion {
+  id                String                @id @default(uuid()) @db.Uuid
+  schoolId          String                @map("school_id") @db.Uuid
+  name              String
+  status            ScheduleVersionStatus @default(DRAFT)
+  versionLockNumber Int                   @default(1) @map("version_lock_number")
+  fitnessScore      Float                 @default(0) @map("fitness_score")
+  aiSuggestions     Json?                 @map("ai_suggestions")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  school                School                       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  entries               ScheduleEntry[]
+  nonTeachingActivities TeacherNonTeachingActivity[]
+  changeLogs            ScheduleChangeLog[]
+
+  @@index([schoolId])
+  @@map("schedule_versions")
+}
+
+model ScheduleEntry {
+  id              String   @id @default(uuid()) @db.Uuid
+  versionId       String   @map("version_id") @db.Uuid
+  courseSubjectId String   @map("course_subject_id") @db.Uuid
+  timeSlotId      String   @map("time_slot_id") @db.Uuid
+  roomId          String   @map("room_id") @db.Uuid
+  isLocked        Boolean  @default(false) @map("is_locked")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  version       ScheduleVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  courseSubject CourseSubject   @relation(fields: [courseSubjectId], references: [id], onDelete: Cascade)
+  timeSlot      TimeSlot        @relation(fields: [timeSlotId], references: [id], onDelete: Cascade)
+  room          Room            @relation(fields: [roomId], references: [id], onDelete: Restrict)
+
+  @@index([versionId])
+  @@index([versionId, timeSlotId])
+  @@index([versionId, courseSubjectId])
+  @@map("schedule_entries")
+}
+
+model TeacherNonTeachingActivity {
+  id           String                  @id @default(uuid()) @db.Uuid
+  versionId    String                  @map("version_id") @db.Uuid
+  teacherId    String                  @map("teacher_id") @db.Uuid
+  timeSlotId   String                  @map("time_slot_id") @db.Uuid
+  activityType NonTeachingActivityType @map("activity_type")
+  title        String
+  roomId       String?                 @map("room_id") @db.Uuid
+  createdAt    DateTime                @default(now()) @map("created_at")
+  updatedAt    DateTime                @updatedAt @map("updated_at")
+
+  version  ScheduleVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  teacher  Teacher         @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  timeSlot TimeSlot        @relation(fields: [timeSlotId], references: [id], onDelete: Cascade)
+  room     Room?           @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@index([versionId])
+  @@index([versionId, teacherId, timeSlotId])
+  @@map("teacher_non_teaching_activities")
+}
+
+model ScheduleChangeLog {
+  id            String                   @id @default(uuid()) @db.Uuid
+  versionId     String                   @map("version_id") @db.Uuid
+  userId        String                   @map("user_id") @db.Uuid
+  actionType    ScheduleChangeActionType @map("action_type")
+  previousState Json                     @map("previous_state")
+  newState      Json                     @map("new_state")
+  createdAt     DateTime                 @default(now()) @map("created_at")
+
+  version ScheduleVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([versionId, createdAt])
+  @@map("schedule_change_logs")
+}

@@ -1,0 +1,21 @@
+{
+  "name": "EduKit",
+  "short_name": "EduKit",
+  "description": "Plataforma de herramientas educativas.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#08090d",
+  "theme_color": "#0353a4",
+  "icons": [
+    {
+      "src": "/isotipo_450.png",
+      "sizes": "456x463",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
