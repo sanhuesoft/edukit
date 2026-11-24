@@ -10,7 +10,7 @@ export default function NotFound() {
         La ruta que buscas no existe en EduKit.
       </p>
       <Button asChild size="sm">
-        <Link href="/horarios">Volver al generador de horarios</Link>
+        <Link href="/app">Volver al generador de horarios</Link>
       </Button>
     </div>
   );

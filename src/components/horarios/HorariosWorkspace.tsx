@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { withBasePath } from "@/lib/basePath";
 import {
   BookOpen,
   CalendarCheck2,
@@ -104,7 +105,7 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
       setAudit(null);
       return;
     }
-    const res = await fetch(`/api/horarios/versions/${versionId}`);
+    const res = await fetch(withBasePath(`/api/horarios/versions/${versionId}`));
     if (res.ok) {
       const data = (await res.json()) as {
         version: ScheduleVersionDetailDTO;
@@ -120,8 +121,8 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
       if (showSpinner) setLoading(true);
       try {
         const [setupRes, schoolsRes] = await Promise.all([
-          fetch("/api/horarios/setup"),
-          fetch("/api/schools"),
+          fetch(withBasePath("/api/horarios/setup")),
+          fetch(withBasePath("/api/schools")),
         ]);
         if (schoolsRes.ok) {
           const sData = (await schoolsRes.json()) as {
@@ -174,7 +175,7 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
   const handleSwitchSchool = async (schoolId: string) => {
     setLoading(true);
     try {
-      const res = await fetch("/api/schools", {
+      const res = await fetch(withBasePath("/api/schools"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ activeSchoolId: schoolId }),
@@ -189,7 +190,7 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
   };
 
   const handleValidate = async () => {
-    const res = await fetch("/api/horarios/validate", { method: "POST" });
+    const res = await fetch(withBasePath("/api/horarios/validate"), { method: "POST" });
     if (res.ok) {
       const data = (await res.json()) as PreconditionResult;
       setPreconditions(data);
@@ -206,7 +207,7 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      const res = await fetch("/api/horarios/generate", {
+      const res = await fetch(withBasePath("/api/horarios/generate"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -248,7 +249,7 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
       const fd = new FormData();
       fd.append("file", importFile);
       fd.append("mode", "commit");
-      const res = await fetch("/api/horarios/setup/import", {
+      const res = await fetch(withBasePath("/api/horarios/setup/import"), {
         method: "POST",
         body: fd,
       });
@@ -280,7 +281,7 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
   };
 
   const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await fetch(withBasePath("/api/auth/logout"), { method: "POST" });
     router.push("/login");
     router.refresh();
   };

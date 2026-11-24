@@ -2,18 +2,18 @@
   "name": "ProfeKit Horarios",
   "short_name": "ProfeKit Horarios",
   "description": "Plataforma de gestión de horarios escolares.",
-  "start_url": "/",
+  "start_url": "/horarios",
   "display": "standalone",
   "background_color": "#08090d",
   "theme_color": "#0353a4",
   "icons": [
     {
-      "src": "/isotipo_450.png",
+      "src": "/horarios/isotipo_450.png",
       "sizes": "456x463",
       "type": "image/png"
     },
     {
-      "src": "/icons/favicon.svg",
+      "src": "/horarios/icons/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml"
     }

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 import {
   Building2,
   CheckCircle2,
@@ -95,7 +96,7 @@ export function StepSalas({ setup, onRefresh, onNextStep }: StepSalasProps) {
   const handleChangeRoomMode = async (mode: RoomAssignmentMode) => {
     setBusy(true);
     try {
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -133,7 +134,7 @@ export function StepSalas({ setup, onRefresh, onNextStep }: StepSalasProps) {
     if (coursesWithoutRoom.length === 0) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -163,7 +164,7 @@ export function StepSalas({ setup, onRefresh, onNextStep }: StepSalasProps) {
   const handleAssignCourseRoom = async (course: CourseDTO, roomId: string) => {
     setBusy(true);
     try {
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -209,7 +210,7 @@ export function StepSalas({ setup, onRefresh, onNextStep }: StepSalasProps) {
     if (!roomName.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: editingRoom ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -261,7 +262,7 @@ export function StepSalas({ setup, onRefresh, onNextStep }: StepSalasProps) {
     setBusy(true);
     try {
       const res = await fetch(
-        `/api/horarios/setup/entities?entity=room&id=${room.id}`,
+        withBasePath(`/api/horarios/setup/entities?entity=room&id=${room.id}`),
         { method: "DELETE" }
       );
       const data = (await res.json()) as { error?: string };

@@ -2,8 +2,9 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, Loader2, Lock, Mail, Moon, ShieldCheck, Sun } from "lucide-react";
+import { Loader2, Lock, Mail, Moon, Sun } from "lucide-react";
 import { EduKitLogo } from "@/components/EduKitLogo";
+import { withBasePath } from "@/lib/basePath";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/components/ui/toast";
 import { useTheme } from "@/context/ThemeContext";
 
@@ -22,15 +22,15 @@ export default function LoginPage() {
   const router = useRouter();
   const { showToast } = useToast();
   const { theme, toggleTheme } = useTheme();
-  const [email, setEmail] = useState("utp@edukit.cl");
-  const [password, setPassword] = useState("Admin123!");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch(withBasePath("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -44,7 +44,7 @@ export default function LoginPage() {
         });
         return;
       }
-      router.push("/horarios");
+      router.push("/app");
       router.refresh();
     } catch {
       showToast({
@@ -115,50 +115,6 @@ export default function LoginPage() {
                 Ingresar
               </Button>
             </form>
-
-            <Separator />
-
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">
-                Cuentas de prueba
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-auto flex-col items-start gap-0.5 px-3 py-2 text-left"
-                  onClick={() => {
-                    setEmail("utp@edukit.cl");
-                    setPassword("Admin123!");
-                  }}
-                >
-                  <span className="flex items-center gap-1.5 text-xs font-medium">
-                    <Building2 className="h-3.5 w-3.5 text-primary" />
-                    Admin Colegio
-                  </span>
-                  <span className="text-[11px] font-normal text-muted-foreground">
-                    utp@edukit.cl
-                  </span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-auto flex-col items-start gap-0.5 px-3 py-2 text-left"
-                  onClick={() => {
-                    setEmail("superadmin@edukit.cl");
-                    setPassword("Admin123!");
-                  }}
-                >
-                  <span className="flex items-center gap-1.5 text-xs font-medium">
-                    <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-                    Super Admin
-                  </span>
-                  <span className="text-[11px] font-normal text-muted-foreground">
-                    superadmin@edukit.cl
-                  </span>
-                </Button>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </main>

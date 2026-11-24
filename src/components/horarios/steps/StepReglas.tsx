@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 import {
   Bot,
   CheckCircle2,
@@ -302,7 +303,7 @@ export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
   const handleSaveRule = async () => {
     setBusy(true);
     try {
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -343,7 +344,7 @@ export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
     setBusy(true);
     try {
       const res = await fetch(
-        `/api/horarios/setup/entities?entity=rule&id=${rule.id}`,
+        withBasePath(`/api/horarios/setup/entities?entity=rule&id=${rule.id}`),
         { method: "DELETE" }
       );
       if (!res.ok) throw new Error("No se pudo eliminar.");
@@ -377,7 +378,7 @@ export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
     setChatInput("");
     setChatLoading(true);
     try {
-      const res = await fetch("/api/horarios/rules/assistant", {
+      const res = await fetch(withBasePath("/api/horarios/rules/assistant"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

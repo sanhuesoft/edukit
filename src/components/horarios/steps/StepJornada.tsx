@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 import { Check, Clock, Coffee, Plus, Sparkles, Trash2, Utensils } from "lucide-react";
 import type { LevelCode } from "@prisma/client";
 import { DAYS_OF_WEEK, LEVEL_LABELS } from "@/lib/scheduling/constants";
@@ -143,7 +144,7 @@ export function StepJornada({ setup, onRefresh, onNextStep }: StepJornadaProps) 
     if (!newBellName.trim()) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -197,7 +198,7 @@ export function StepJornada({ setup, onRefresh, onNextStep }: StepJornadaProps) 
     setBusy(true);
     try {
       const res = await fetch(
-        `/api/horarios/setup/entities?entity=bellSchedule&id=${bell.id}`,
+        withBasePath(`/api/horarios/setup/entities?entity=bellSchedule&id=${bell.id}`),
         { method: "DELETE" }
       );
       const data = (await res.json()) as { error?: string };
@@ -228,7 +229,7 @@ export function StepJornada({ setup, onRefresh, onNextStep }: StepJornadaProps) 
     setBusy(true);
     try {
       const maxBlocks = Math.max(...Object.values(blocksByDay));
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

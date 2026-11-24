@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 import { Copy, Layers, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { calculateEffectiveCourseBlocks, LEVEL_LABELS } from "@/lib/scheduling/constants";
 import { Button } from "@/components/ui/button";
@@ -180,7 +181,7 @@ export function StepPlanEstudios({
           ? [{ teacherId, role: "LEAD" as const }]
           : [];
 
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -245,7 +246,7 @@ export function StepPlanEstudios({
     setBusy(true);
     try {
       const res = await fetch(
-        `/api/horarios/setup/entities?entity=courseSubject&id=${cs.id}`,
+        withBasePath(`/api/horarios/setup/entities?entity=courseSubject&id=${cs.id}`),
         { method: "DELETE" }
       );
       if (!res.ok) throw new Error("No se pudo eliminar.");
@@ -270,7 +271,7 @@ export function StepPlanEstudios({
     if (!selectedCourse || targetCourseIds.length === 0) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

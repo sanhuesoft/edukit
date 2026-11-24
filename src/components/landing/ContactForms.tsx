@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 import {
   AlertCircle,
   Building2,
@@ -106,7 +107,7 @@ export function InstitutionContactForm({
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/contact", {
+      const res = await fetch(withBasePath("/api/contact"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -441,7 +442,7 @@ export function TeacherContactForm({
     setSubmitting(true);
 
     try {
-      const res = await fetch("/api/contact", {
+      const res = await fetch(withBasePath("/api/contact"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

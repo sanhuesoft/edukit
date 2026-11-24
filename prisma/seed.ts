@@ -22,7 +22,55 @@ async function main() {
     },
   });
 
-  // 2. Colegio demo
+  // 2. Colegio demo + SCHOOL_ADMIN (utp@edukit.cl)
+  // Si el usuario utp@edukit.cl ya existe (por ejemplo, en un entorno con datos reales
+  // donde se cambió el RBD del colegio), NO se debe recrear el colegio demo ni reasignar
+  // su schoolId ni cargar datos ficticios.
+  const existingUtp = await prisma.user.findUnique({
+    where: { email: "utp@edukit.cl" },
+    select: { id: true, schoolId: true },
+  });
+
+  // 3b. Colegio vacío y cuenta UTP sin datos cargados para pruebas (utp2@edukit.cl)
+  const existingUtp2 = await prisma.user.findUnique({
+    where: { email: "utp2@edukit.cl" },
+    select: { id: true, schoolId: true },
+  });
+
+  if (!existingUtp2) {
+    let emptySchool = await prisma.school.findUnique({ where: { rbd: "99999-9" } });
+    if (!emptySchool) {
+      emptySchool = await prisma.school.create({
+        data: {
+          name: "Colegio Pruebas (Sin Datos)",
+          rbd: "99999-9",
+          commune: "Santiago",
+          academicYear: 2026,
+          isActive: true,
+        },
+      });
+    }
+
+    await prisma.user.create({
+      data: {
+        email: "utp2@edukit.cl",
+        passwordHash: hashPassword("Admin123!"),
+        firstName: "Prueba",
+        lastName: "UTP (Sin datos)",
+        role: "SCHOOL_ADMIN",
+        schoolId: emptySchool.id,
+        isActive: true,
+      },
+    });
+  }
+
+  if (existingUtp) {
+    console.log(
+      "El usuario utp@edukit.cl ya existe. Se omite la creación/carga del colegio demo para proteger los datos existentes."
+    );
+    return;
+  }
+
   let school = await prisma.school.findUnique({ where: { rbd: "12345-6" } });
   if (!school) {
     school = await prisma.school.create({
@@ -36,11 +84,8 @@ async function main() {
     });
   }
 
-  // 3. SCHOOL_ADMIN
-  await prisma.user.upsert({
-    where: { email: "utp@edukit.cl" },
-    update: { schoolId: school.id },
-    create: {
+  await prisma.user.create({
+    data: {
       email: "utp@edukit.cl",
       passwordHash: hashPassword("Admin123!"),
       firstName: "Camila",
@@ -51,37 +96,20 @@ async function main() {
     },
   });
 
-  // 3b. Colegio vacío y cuenta UTP sin datos cargados para pruebas
-  let emptySchool = await prisma.school.findUnique({ where: { rbd: "99999-9" } });
-  if (!emptySchool) {
-    emptySchool = await prisma.school.create({
-      data: {
-        name: "Colegio Pruebas (Sin Datos)",
-        rbd: "99999-9",
-        commune: "Santiago",
-        academicYear: 2026,
-        isActive: true,
-      },
-    });
-  }
-
-  await prisma.user.upsert({
-    where: { email: "utp2@edukit.cl" },
-    update: { schoolId: emptySchool.id },
-    create: {
-      email: "utp2@edukit.cl",
-      passwordHash: hashPassword("Admin123!"),
-      firstName: "Prueba",
-      lastName: "UTP (Sin datos)",
-      role: "SCHOOL_ADMIN",
-      schoolId: emptySchool.id,
-      isActive: true,
-    },
-  });
-
-  // Evitar duplicar datos académicos si ya existen cursos en el colegio demo
-  const existingCourses = await prisma.course.count({ where: { schoolId: school.id } });
-  if (existingCourses > 0) {
+  // Evitar duplicar datos académicos si ya existen registros en el colegio demo
+  const [existingCourses, existingTeachers, existingRooms, existingSubjects] =
+    await Promise.all([
+      prisma.course.count({ where: { schoolId: school.id } }),
+      prisma.teacher.count({ where: { schoolId: school.id } }),
+      prisma.room.count({ where: { schoolId: school.id } }),
+      prisma.subject.count({ where: { schoolId: school.id } }),
+    ]);
+  if (
+    existingCourses > 0 ||
+    existingTeachers > 0 ||
+    existingRooms > 0 ||
+    existingSubjects > 0
+  ) {
     console.log("El colegio demo ya tiene datos académicos cargados. Seed completado.");
     return;
   }

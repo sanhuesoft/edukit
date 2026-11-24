@@ -1,6 +1,7 @@
 import React from "react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { withBasePath } from "@/lib/basePath";
 
 interface EduKitLogoProps {
   compact?: boolean;
@@ -24,7 +25,7 @@ export function EduKitLogo({
   return (
     <span className={cn("inline-flex items-center select-none", className)}>
       <Image
-        src="/profekit_horarios_clear.png"
+        src={withBasePath("/profekit_horarios_clear.png")}
         alt="ProfeKit Horarios"
         width={resolvedWidth}
         height={resolvedHeight}
@@ -32,7 +33,7 @@ export function EduKitLogo({
         className={cn("block dark:hidden shrink-0 object-contain", sizeClass, imageClassName)}
       />
       <Image
-        src="/profekit_horarios_dark.png"
+        src={withBasePath("/profekit_horarios_dark.png")}
         alt="ProfeKit Horarios"
         width={resolvedWidth}
         height={resolvedHeight}

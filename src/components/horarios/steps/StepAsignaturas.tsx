@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 import {
   Baby,
   BookMarked,
@@ -148,7 +149,7 @@ export function StepAsignaturas({
     if (items.length === 0) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -209,7 +210,7 @@ export function StepAsignaturas({
           .slice(0, 4)
           .toUpperCase();
 
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -263,7 +264,7 @@ export function StepAsignaturas({
     setBusy(true);
     try {
       const res = await fetch(
-        `/api/horarios/setup/entities?entity=subject&id=${subject.id}`,
+        withBasePath(`/api/horarios/setup/entities?entity=subject&id=${subject.id}`),
         { method: "DELETE" }
       );
       const data = (await res.json()) as { error?: string };

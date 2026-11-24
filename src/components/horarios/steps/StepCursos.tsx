@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 import { Pencil, Plus, Search, Trash2, Users } from "lucide-react";
 import type { LevelCode } from "@prisma/client";
 import { LEVEL_LABELS } from "@/lib/scheduling/constants";
@@ -93,7 +94,7 @@ export function StepCursos({ setup, onRefresh, onNextStep }: StepCursosProps) {
           .slice(0, 6)
           .toUpperCase();
 
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -147,7 +148,7 @@ export function StepCursos({ setup, onRefresh, onNextStep }: StepCursosProps) {
     setBusy(true);
     try {
       const res = await fetch(
-        `/api/horarios/setup/entities?entity=course&id=${course.id}`,
+        withBasePath(`/api/horarios/setup/entities?entity=course&id=${course.id}`),
         { method: "DELETE" }
       );
       const data = (await res.json()) as { error?: string };

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 import { Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import type { LevelCode } from "@prisma/client";
 import {
@@ -117,7 +118,7 @@ export function StepDocentes({ setup, onRefresh, onNextStep }: StepDocentesProps
         levelCodes,
       };
 
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
@@ -150,7 +151,7 @@ export function StepDocentes({ setup, onRefresh, onNextStep }: StepDocentesProps
     setBusy(true);
     try {
       const res = await fetch(
-        `/api/horarios/setup/entities?entity=teacher&id=${teacher.id}`,
+        withBasePath(`/api/horarios/setup/entities?entity=teacher&id=${teacher.id}`),
         { method: "DELETE" }
       );
       const data = (await res.json()) as { error?: string };
@@ -175,7 +176,7 @@ export function StepDocentes({ setup, onRefresh, onNextStep }: StepDocentesProps
   const handleRecalculateLey20903 = async () => {
     setBusy(true);
     try {
-      const res = await fetch("/api/horarios/setup/entities", {
+      const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ entity: "recalculate_ley20903", data: {} }),

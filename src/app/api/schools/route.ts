@@ -5,6 +5,7 @@ import {
   ACTIVE_SCHOOL_COOKIE_NAME,
   getCurrentUser,
 } from "@/lib/auth";
+import { BASE_PATH } from "@/lib/basePath";
 import { SchoolSetupService } from "@/services/SchoolSetupService";
 
 const createSchoolSchema = z.object({
@@ -100,7 +101,7 @@ export async function PATCH(request: Request) {
   res.cookies.set(ACTIVE_SCHOOL_COOKIE_NAME, exists.id, {
     httpOnly: true,
     sameSite: "lax",
-    path: "/",
+    path: BASE_PATH,
     maxAge: 60 * 60 * 24 * 30,
   });
   return res;

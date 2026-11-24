@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { withBasePath } from "@/lib/basePath";
 import {
   AlertTriangle,
   BookOpen,
@@ -329,7 +330,7 @@ export function StepResultado({
     if (!versionDetail) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/horarios/versions/${versionDetail.id}/changes`, {
+      const res = await fetch(withBasePath(`/api/horarios/versions/${versionDetail.id}/changes`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -383,7 +384,7 @@ export function StepResultado({
               expectedLockNumber: versionDetail.versionLockNumber,
             };
 
-      const res = await fetch(`/api/horarios/versions/${versionDetail.id}/changes`, {
+      const res = await fetch(withBasePath(`/api/horarios/versions/${versionDetail.id}/changes`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -411,7 +412,7 @@ export function StepResultado({
     if (!versionDetail) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/horarios/versions/${versionDetail.id}/revert`, {
+      const res = await fetch(withBasePath(`/api/horarios/versions/${versionDetail.id}/revert`), {
         method: "POST",
       });
       const data = (await res.json()) as { error?: string };
@@ -447,7 +448,7 @@ export function StepResultado({
         url = `/api/horarios/versions/${versionDetail.id}/export?type=master`;
       }
     }
-    window.open(url, "_blank");
+    window.open(withBasePath(url), "_blank");
   };
 
   // Master grid lookup

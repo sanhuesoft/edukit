@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { ToastProvider } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { withBasePath } from "@/lib/basePath";
 
 const inter = localFont({
   src: "../../public/fonts/InterVariable.woff2",
@@ -18,12 +19,12 @@ export const metadata: Metadata = {
     "Genera horarios escolares sin choques, adaptados a la Ley 20.903, PIE y la realidad de colegios chilenos. Cotización a medida por ProfeKit SpA con boleta y factura electrónica.",
   icons: {
     icon: [
-      { url: "/isotipo_450.png", type: "image/png" },
-      { url: "/icons/favicon.svg", type: "image/svg+xml" },
+      { url: withBasePath("/isotipo_450.png"), type: "image/png" },
+      { url: withBasePath("/icons/favicon.svg"), type: "image/svg+xml" },
     ],
-    apple: [{ url: "/isotipo_450.png", type: "image/png" }],
+    apple: [{ url: withBasePath("/isotipo_450.png"), type: "image/png" }],
   },
-  manifest: "/site.webmanifest",
+  manifest: withBasePath("/site.webmanifest"),
 };
 
 export default function RootLayout({

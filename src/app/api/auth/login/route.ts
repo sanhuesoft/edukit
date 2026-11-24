@@ -6,6 +6,7 @@ import {
   SESSION_COOKIE_NAME,
   signSessionToken,
 } from "@/lib/auth";
+import { BASE_PATH } from "@/lib/basePath";
 
 const loginSchema = z.object({
   email: z.string().email("Correo inválido"),
@@ -60,7 +61,7 @@ export async function POST(request: Request) {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
-      path: "/",
+      path: BASE_PATH,
       maxAge: 60 * 60 * 24 * 7,
     });
 
