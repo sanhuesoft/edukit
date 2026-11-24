@@ -21,9 +21,18 @@ enum LevelCode {
 
 enum RoomType {
   CLASSROOM
+  LIBRARY_CRA
+  PIE_ROOM
   LAB
-  GYM
   COMPUTER_LAB
+  LANGUAGE_LAB
+  ART_ROOM
+  MUSIC_ROOM
+  MULTIPURPOSE
+  WORKSHOP_TP
+  GYM
+  PATIO
+  AUDITORIUM
 }
 
 enum TeacherAssignmentRole {
@@ -268,6 +277,7 @@ model Subject {
   schoolId          String    @map("school_id") @db.Uuid
   name              String
   code              String
+  colorHex          String    @default("#2563EB") @map("color_hex")
   requiresRoomType  RoomType? @map("requires_room_type")
   requiredRoomId    String?   @map("required_room_id") @db.Uuid
   cognitiveWeight   Int       @default(1) @map("cognitive_weight")

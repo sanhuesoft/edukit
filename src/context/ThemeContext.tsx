@@ -15,7 +15,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 const THEME_STORAGE_KEY = "edukit_theme";
 
-const THEME_INITIALIZER_SCRIPT = `(function(){var t=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';try{var saved=localStorage.getItem('${THEME_STORAGE_KEY}');if(saved==='light'||saved==='dark'){t=saved;}}catch(e){}document.documentElement.setAttribute('data-theme',t);document.documentElement.style.colorScheme=t;})();`;
+const THEME_INITIALIZER_SCRIPT = `(function(){var t='light';try{var saved=localStorage.getItem('${THEME_STORAGE_KEY}');if(saved==='light'||saved==='dark'){t=saved;}}catch(e){}document.documentElement.setAttribute('data-theme',t);document.documentElement.classList.toggle('dark',t==='dark');document.documentElement.style.colorScheme=t;})();`;
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useServerInsertedHTML(() => (
@@ -26,23 +26,21 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   ));
 
   const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof window === "undefined") return "dark";
-    const systemTheme = window.matchMedia("(prefers-color-scheme: light)").matches
-      ? "light"
-      : "dark";
+    if (typeof window === "undefined") return "light";
     try {
       const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as Theme | null;
       if (savedTheme === "light" || savedTheme === "dark") {
         return savedTheme;
       }
-      return systemTheme;
     } catch {
-      return systemTheme;
+      // ignore
     }
+    return "light";
   });
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.classList.toggle("dark", theme === "dark");
     document.documentElement.style.colorScheme = theme;
   }, [theme]);
 
@@ -51,9 +49,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     try {
       localStorage.setItem(THEME_STORAGE_KEY, newTheme);
       document.documentElement.setAttribute("data-theme", newTheme);
+      document.documentElement.classList.toggle("dark", newTheme === "dark");
       document.documentElement.style.colorScheme = newTheme;
     } catch {
-      // Ignorar si falla localStorage
+      // ignore
     }
   };
 

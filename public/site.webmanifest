@@ -1,7 +1,7 @@
 {
-  "name": "EduKit",
-  "short_name": "EduKit",
-  "description": "Plataforma de herramientas educativas.",
+  "name": "ProfeKit Horarios",
+  "short_name": "ProfeKit Horarios",
+  "description": "Plataforma de gestión de horarios escolares.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#08090d",

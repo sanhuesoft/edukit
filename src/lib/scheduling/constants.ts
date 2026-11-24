@@ -23,9 +23,18 @@ export const LEVEL_LABELS: Record<LevelCode, string> = {
 
 export const ROOM_TYPE_LABELS: Record<RoomType, string> = {
   CLASSROOM: "Sala de Clases",
+  LIBRARY_CRA: "Biblioteca / CRA",
+  PIE_ROOM: "Sala de Apoyo / PIE",
   LAB: "Laboratorio de Ciencias",
-  GYM: "Gimnasio / Cancha",
   COMPUTER_LAB: "Sala de Computación",
+  LANGUAGE_LAB: "Laboratorio de Idiomas",
+  ART_ROOM: "Sala de Artes",
+  MUSIC_ROOM: "Sala de Música",
+  MULTIPURPOSE: "Sala Multiuso / Taller",
+  WORKSHOP_TP: "Taller Técnico-Profesional",
+  GYM: "Gimnasio",
+  PATIO: "Patio / Multicancha",
+  AUDITORIUM: "Auditorio / Salón de Actos",
 };
 
 export const TEACHER_ROLE_LABELS: Record<TeacherAssignmentRole, string> = {
@@ -577,6 +586,35 @@ export function formatMinutesToTime(totalMinutes: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+/**
+ * Calcula los bloques efectivos semanales de un curso agrupando las asignaturas
+ * que comparten un mismo `syncGroupCode` (ya que ocurren de forma simultánea).
+ */
+export function calculateEffectiveCourseBlocks(
+  courseSubjects: Array<{ weeklyBlocks: number; syncGroupCode?: string | null }>
+): number {
+  let regularBlocks = 0;
+  const syncGroupMax = new Map<string, number>();
+
+  for (const cs of courseSubjects) {
+    const code = cs.syncGroupCode?.trim();
+    if (code) {
+      const prev = syncGroupMax.get(code) ?? 0;
+      if (cs.weeklyBlocks > prev) {
+        syncGroupMax.set(code, cs.weeklyBlocks);
+      }
+    } else {
+      regularBlocks += cs.weeklyBlocks;
+    }
+  }
+
+  let syncBlocks = 0;
+  for (const val of syncGroupMax.values()) {
+    syncBlocks += val;
+  }
+  return regularBlocks + syncBlocks;
+}
+
 export function parseTimeToMinutes(timeStr: string): number {
   const [h, m] = timeStr.split(":").map(Number);
   return (h || 0) * 60 + (m || 0);
@@ -611,3 +649,238 @@ export const TEACHER_AUTO_PALETTE: string[] = [
   ...TEACHER_COLOR_FAMILIES.map((family) => family.colors[1]),
   ...TEACHER_COLOR_FAMILIES.map((family) => family.colors[0]),
 ];
+
+export type MineducCatalogCategory = "PARVULARIA" | "PLAN_COMUN" | "ELECTIVO" | "TP";
+
+export interface MineducSubjectPreset {
+  name: string;
+  code: string;
+  category: MineducCatalogCategory;
+  subGroup: string;
+  colorHex: string;
+  requiresRoomType: RoomType | null;
+  cognitiveWeight: number;
+}
+
+export const MINEDUC_SUBJECT_CATALOG: MineducSubjectPreset[] = [
+  // ─── 1. Educación Parvularia (8 Núcleos de Aprendizaje — BCEP) ───
+  { name: "Identidad y Autonomía", code: "PIA", category: "PARVULARIA", subGroup: "Desarrollo Personal y Social", colorHex: "#FFB725", requiresRoomType: null, cognitiveWeight: 1 },
+  { name: "Convivencia y Ciudadanía", code: "PCC", category: "PARVULARIA", subGroup: "Desarrollo Personal y Social", colorHex: "#FFC768", requiresRoomType: null, cognitiveWeight: 1 },
+  { name: "Corporalidad y Movimiento", code: "PCM", category: "PARVULARIA", subGroup: "Desarrollo Personal y Social", colorHex: "#8AD20E", requiresRoomType: "PATIO", cognitiveWeight: 1 },
+  { name: "Lenguaje Verbal", code: "PLV", category: "PARVULARIA", subGroup: "Comunicación Integral", colorHex: "#3F69BD", requiresRoomType: null, cognitiveWeight: 2 },
+  { name: "Lenguajes Artísticos", code: "PLA", category: "PARVULARIA", subGroup: "Comunicación Integral", colorHex: "#E562AE", requiresRoomType: "ART_ROOM", cognitiveWeight: 1 },
+  { name: "Exploración del Entorno Natural", code: "PEN", category: "PARVULARIA", subGroup: "Interacción y Comprensión del Entorno", colorHex: "#50C948", requiresRoomType: null, cognitiveWeight: 2 },
+  { name: "Comprensión del Entorno Sociocultural", code: "PES", category: "PARVULARIA", subGroup: "Interacción y Comprensión del Entorno", colorHex: "#FEA500", requiresRoomType: null, cognitiveWeight: 2 },
+  { name: "Pensamiento Matemático", code: "PPM", category: "PARVULARIA", subGroup: "Interacción y Comprensión del Entorno", colorHex: "#FF4C21", requiresRoomType: null, cognitiveWeight: 2 },
+
+  // ─── 2. Plan Común (Básica, Media y Transversal) ───
+  { name: "Lenguaje y Comunicación", code: "LEN", category: "PLAN_COMUN", subGroup: "Básica", colorHex: "#3F69BD", requiresRoomType: null, cognitiveWeight: 3 },
+  { name: "Lengua y Literatura", code: "LYL", category: "PLAN_COMUN", subGroup: "Media", colorHex: "#3F69BD", requiresRoomType: null, cognitiveWeight: 3 },
+  { name: "Matemática", code: "MAT", category: "PLAN_COMUN", subGroup: "Transversal", colorHex: "#FF4C21", requiresRoomType: null, cognitiveWeight: 3 },
+  { name: "Historia, Geografía y Ciencias Sociales", code: "HIS", category: "PLAN_COMUN", subGroup: "Transversal", colorHex: "#FFB725", requiresRoomType: null, cognitiveWeight: 2 },
+  { name: "Ciencias Naturales", code: "CNAT", category: "PLAN_COMUN", subGroup: "Básica", colorHex: "#50C948", requiresRoomType: "LAB", cognitiveWeight: 2 },
+  { name: "Biología", code: "BIO", category: "PLAN_COMUN", subGroup: "Media", colorHex: "#50C948", requiresRoomType: "LAB", cognitiveWeight: 3 },
+  { name: "Física", code: "FIS", category: "PLAN_COMUN", subGroup: "Media", colorHex: "#00B7F0", requiresRoomType: "LAB", cognitiveWeight: 3 },
+  { name: "Química", code: "QUI", category: "PLAN_COMUN", subGroup: "Media", colorHex: "#50CAA5", requiresRoomType: "LAB", cognitiveWeight: 3 },
+  { name: "Ciencias para la Ciudadanía", code: "CPC", category: "PLAN_COMUN", subGroup: "Media", colorHex: "#7AD06D", requiresRoomType: "LAB", cognitiveWeight: 2 },
+  { name: "Inglés", code: "ING", category: "PLAN_COMUN", subGroup: "Transversal", colorHex: "#6147A8", requiresRoomType: "LANGUAGE_LAB", cognitiveWeight: 2 },
+  { name: "Francés", code: "FRA", category: "PLAN_COMUN", subGroup: "Idiomas", colorHex: "#7A62B6", requiresRoomType: "LANGUAGE_LAB", cognitiveWeight: 2 },
+  { name: "Alemán", code: "ALE", category: "PLAN_COMUN", subGroup: "Idiomas", colorHex: "#9481C3", requiresRoomType: "LANGUAGE_LAB", cognitiveWeight: 2 },
+  { name: "Educación Física y Salud", code: "EFI", category: "PLAN_COMUN", subGroup: "Transversal", colorHex: "#8AD20E", requiresRoomType: "GYM", cognitiveWeight: 1 },
+  { name: "Artes Visuales", code: "ART", category: "PLAN_COMUN", subGroup: "Transversal", colorHex: "#E562AE", requiresRoomType: "ART_ROOM", cognitiveWeight: 1 },
+  { name: "Música", code: "MUS", category: "PLAN_COMUN", subGroup: "Transversal", colorHex: "#9141A4", requiresRoomType: "MUSIC_ROOM", cognitiveWeight: 1 },
+  { name: "Danza", code: "DAN", category: "PLAN_COMUN", subGroup: "Artística", colorHex: "#DF269B", requiresRoomType: "MULTIPURPOSE", cognitiveWeight: 1 },
+  { name: "Teatro", code: "TEA", category: "PLAN_COMUN", subGroup: "Artística", colorHex: "#FF488B", requiresRoomType: "AUDITORIUM", cognitiveWeight: 1 },
+  { name: "Tecnología", code: "TEC", category: "PLAN_COMUN", subGroup: "Transversal", colorHex: "#59C2F2", requiresRoomType: "COMPUTER_LAB", cognitiveWeight: 1 },
+  { name: "Orientación", code: "ORI", category: "PLAN_COMUN", subGroup: "Transversal", colorHex: "#7BD4B6", requiresRoomType: null, cognitiveWeight: 1 },
+  { name: "Consejo de Curso", code: "CC", category: "PLAN_COMUN", subGroup: "Transversal", colorHex: "#9FDDC6", requiresRoomType: null, cognitiveWeight: 1 },
+  { name: "Religión", code: "REL", category: "PLAN_COMUN", subGroup: "Transversal", colorHex: "#FFD998", requiresRoomType: null, cognitiveWeight: 1 },
+  { name: "Educación Ciudadana", code: "ECI", category: "PLAN_COMUN", subGroup: "Media", colorHex: "#FEA500", requiresRoomType: null, cognitiveWeight: 2 },
+  { name: "Filosofía", code: "FIL", category: "PLAN_COMUN", subGroup: "Media", colorHex: "#7A62B6", requiresRoomType: null, cognitiveWeight: 2 },
+  { name: "Lengua y Cultura de los Pueblos Originarios Ancestrales", code: "LPO", category: "PLAN_COMUN", subGroup: "Básica", colorHex: "#FFC768", requiresRoomType: null, cognitiveWeight: 1 },
+
+  // ─── 3. Electivos — Plan Diferenciado HC 3° y 4° Medio (27 asignaturas oficiales) ───
+  // Área A: Lengua, Humanidades y Ciencias Sociales
+  { name: "Lectura y Escritura Especializadas", code: "LEE", category: "ELECTIVO", subGroup: "Área A · Lenguaje", colorHex: "#3F69BD", requiresRoomType: null, cognitiveWeight: 3 },
+  { name: "Participación y Argumentación en Democracia", code: "PAD", category: "ELECTIVO", subGroup: "Área A · Lenguaje", colorHex: "#667EC8", requiresRoomType: null, cognitiveWeight: 3 },
+  { name: "Taller de Literatura", code: "TLI", category: "ELECTIVO", subGroup: "Área A · Lenguaje", colorHex: "#8797D2", requiresRoomType: null, cognitiveWeight: 2 },
+  { name: "Estética", code: "EST", category: "ELECTIVO", subGroup: "Área A · Filosofía", colorHex: "#6147A8", requiresRoomType: null, cognitiveWeight: 2 },
+  { name: "Filosofía Política", code: "FPO", category: "ELECTIVO", subGroup: "Área A · Filosofía", colorHex: "#7A62B6", requiresRoomType: null, cognitiveWeight: 3 },
+  { name: "Seminario de Filosofía", code: "SFI", category: "ELECTIVO", subGroup: "Área A · Filosofía", colorHex: "#9481C3", requiresRoomType: null, cognitiveWeight: 3 },
+  { name: "Comprensión Histórica del Presente", code: "CHP", category: "ELECTIVO", subGroup: "Área A · Historia", colorHex: "#DF269B", requiresRoomType: null, cognitiveWeight: 2 },
+  { name: "Economía y Sociedad", code: "EYS", category: "ELECTIVO", subGroup: "Área A · Historia", colorHex: "#FF488B", requiresRoomType: null, cognitiveWeight: 2 },
+  { name: "Geografía, Territorio y Desafíos Socioambientales", code: "GTD", category: "ELECTIVO", subGroup: "Área A · Historia", colorHex: "#FFB725", requiresRoomType: null, cognitiveWeight: 2 },
+  // Área B: Matemática y Ciencias Naturales
+  { name: "Geometría 3D", code: "G3D", category: "ELECTIVO", subGroup: "Área B · Matemática", colorHex: "#FF4C21", requiresRoomType: null, cognitiveWeight: 3 },
+  { name: "Límites, Derivadas e Integrales", code: "LDI", category: "ELECTIVO", subGroup: "Área B · Matemática", colorHex: "#FE0000", requiresRoomType: null, cognitiveWeight: 3 },
+  { name: "Pensamiento Computacional y Programación", code: "PCP", category: "ELECTIVO", subGroup: "Área B · Matemática", colorHex: "#00B7F0", requiresRoomType: "COMPUTER_LAB", cognitiveWeight: 3 },
+  { name: "Probabilidades y Estadística Descriptiva e Inferencial", code: "PED", category: "ELECTIVO", subGroup: "Área B · Matemática", colorHex: "#FF7D59", requiresRoomType: null, cognitiveWeight: 3 },
+  { name: "Biología Celular y Molecular", code: "BCM", category: "ELECTIVO", subGroup: "Área B · Ciencias", colorHex: "#50C948", requiresRoomType: "LAB", cognitiveWeight: 3 },
+  { name: "Biología de los Ecosistemas", code: "BEC", category: "ELECTIVO", subGroup: "Área B · Ciencias", colorHex: "#7AD06D", requiresRoomType: "LAB", cognitiveWeight: 2 },
+  { name: "Ciencias de la Salud", code: "CSA", category: "ELECTIVO", subGroup: "Área B · Ciencias", colorHex: "#9EDA90", requiresRoomType: "LAB", cognitiveWeight: 2 },
+  { name: "Física (Profundización)", code: "FISD", category: "ELECTIVO", subGroup: "Área B · Ciencias", colorHex: "#59C2F2", requiresRoomType: "LAB", cognitiveWeight: 3 },
+  { name: "Química (Profundización)", code: "QUID", category: "ELECTIVO", subGroup: "Área B · Ciencias", colorHex: "#50CAA5", requiresRoomType: "LAB", cognitiveWeight: 3 },
+  // Área C: Artes, Educación Física y Salud
+  { name: "Artes Visuales, Audiovisuales y Multimediales", code: "AVM", category: "ELECTIVO", subGroup: "Área C · Artes", colorHex: "#E562AE", requiresRoomType: "ART_ROOM", cognitiveWeight: 1 },
+  { name: "Creación y Composición Musical", code: "CCM", category: "ELECTIVO", subGroup: "Área C · Artes", colorHex: "#9141A4", requiresRoomType: "MUSIC_ROOM", cognitiveWeight: 1 },
+  { name: "Diseño y Arquitectura", code: "DYA", category: "ELECTIVO", subGroup: "Área C · Artes", colorHex: "#A263B4", requiresRoomType: "ART_ROOM", cognitiveWeight: 2 },
+  { name: "Interpretación Musical", code: "IMU", category: "ELECTIVO", subGroup: "Área C · Artes", colorHex: "#B284C4", requiresRoomType: "MUSIC_ROOM", cognitiveWeight: 1 },
+  { name: "Interpretación y Creación en Danza", code: "ICD", category: "ELECTIVO", subGroup: "Área C · Artes", colorHex: "#EB88BE", requiresRoomType: "MULTIPURPOSE", cognitiveWeight: 1 },
+  { name: "Interpretación y Creación en Teatro", code: "ICT", category: "ELECTIVO", subGroup: "Área C · Artes", colorHex: "#FF0175", requiresRoomType: "AUDITORIUM", cognitiveWeight: 1 },
+  { name: "Ciencias del Ejercicio Físico y Deportivo", code: "CEF", category: "ELECTIVO", subGroup: "Área C · Ed. Física", colorHex: "#8AD20E", requiresRoomType: "GYM", cognitiveWeight: 2 },
+  { name: "Expresión Corporal", code: "ECO", category: "ELECTIVO", subGroup: "Área C · Ed. Física", colorHex: "#A1DA4F", requiresRoomType: "GYM", cognitiveWeight: 1 },
+  { name: "Promoción de Estilos de Vida Activos y Saludables", code: "PEV", category: "ELECTIVO", subGroup: "Área C · Ed. Física", colorHex: "#7BD4B6", requiresRoomType: "GYM", cognitiveWeight: 1 },
+
+  // ─── 4. Educación Media Técnico-Profesional (35 especialidades oficiales en 15 sectores) ───
+  { name: "Administración", code: "TP_ADM", category: "TP", subGroup: "Administración y Comercio", colorHex: "#3F69BD", requiresRoomType: "COMPUTER_LAB", cognitiveWeight: 2 },
+  { name: "Contabilidad", code: "TP_CON", category: "TP", subGroup: "Administración y Comercio", colorHex: "#667EC8", requiresRoomType: "COMPUTER_LAB", cognitiveWeight: 2 },
+  { name: "Agropecuaria", code: "TP_AGR", category: "TP", subGroup: "Agropecuario", colorHex: "#50C948", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Elaboración Industrial de Alimentos", code: "TP_EIA", category: "TP", subGroup: "Alimentación", colorHex: "#FFB725", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Gastronomía", code: "TP_GAS", category: "TP", subGroup: "Alimentación", colorHex: "#FEA500", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Vestuario y Confección Textil", code: "TP_VCT", category: "TP", subGroup: "Confección", colorHex: "#E562AE", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Construcción", code: "TP_CST", category: "TP", subGroup: "Construcción", colorHex: "#FF7D59", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Instalaciones Sanitarias", code: "TP_ISA", category: "TP", subGroup: "Construcción", colorHex: "#FFA485", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Montaje Industrial", code: "TP_MIN", category: "TP", subGroup: "Construcción", colorHex: "#FF4C21", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Refrigeración y Climatización", code: "TP_REF", category: "TP", subGroup: "Construcción", colorHex: "#59C2F2", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Electricidad", code: "TP_ELE", category: "TP", subGroup: "Electricidad", colorHex: "#F2F100", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Electrónica", code: "TP_ELN", category: "TP", subGroup: "Electricidad", colorHex: "#F4F43C", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Gráfica", code: "TP_GRA", category: "TP", subGroup: "Gráfico", colorHex: "#DF269B", requiresRoomType: "COMPUTER_LAB", cognitiveWeight: 2 },
+  { name: "Dibujo Técnico", code: "TP_DIB", category: "TP", subGroup: "Gráfico", colorHex: "#9141A4", requiresRoomType: "COMPUTER_LAB", cognitiveWeight: 2 },
+  { name: "Servicios de Hotelería", code: "TP_HOT", category: "TP", subGroup: "Hotelería y Turismo", colorHex: "#7BD4B6", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Servicios de Turismo", code: "TP_TUR", category: "TP", subGroup: "Hotelería y Turismo", colorHex: "#50CAA5", requiresRoomType: null, cognitiveWeight: 2 },
+  { name: "Forestal", code: "TP_FOR", category: "TP", subGroup: "Maderero", colorHex: "#8AD20E", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Muebles y Terminaciones en Madera", code: "TP_MUE", category: "TP", subGroup: "Maderero", colorHex: "#A1DA4F", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Acuicultura", code: "TP_ACU", category: "TP", subGroup: "Marítimo", colorHex: "#00B7F0", requiresRoomType: "LAB", cognitiveWeight: 2 },
+  { name: "Pesquería", code: "TP_PES", category: "TP", subGroup: "Marítimo", colorHex: "#8ACFF8", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Tripulación de Naves Mercantes y Especiales", code: "TP_TNM", category: "TP", subGroup: "Marítimo", colorHex: "#3F69BD", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Operaciones Portuarias", code: "TP_OPO", category: "TP", subGroup: "Marítimo", colorHex: "#6147A8", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Mecánica Automotriz", code: "TP_MAU", category: "TP", subGroup: "Metalmecánica", colorHex: "#FE0000", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Mecánica Industrial", code: "TP_MIND", category: "TP", subGroup: "Metalmecánica", colorHex: "#FF4C21", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Construcciones Metálicas", code: "TP_CMT", category: "TP", subGroup: "Metalmecánica", colorHex: "#7A62B6", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Mecánica de Mantención de Aeronaves", code: "TP_MMA", category: "TP", subGroup: "Metalmecánica", colorHex: "#00B7F0", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 3 },
+  { name: "Explotación Minera", code: "TP_EMI", category: "TP", subGroup: "Minero", colorHex: "#FFC768", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Metalurgia Extractiva", code: "TP_MEX", category: "TP", subGroup: "Minero", colorHex: "#FFB725", requiresRoomType: "LAB", cognitiveWeight: 2 },
+  { name: "Asistencia en Geología", code: "TP_AGE", category: "TP", subGroup: "Minero", colorHex: "#B9E37F", requiresRoomType: "LAB", cognitiveWeight: 2 },
+  { name: "Química Industrial", code: "TP_QIN", category: "TP", subGroup: "Química e Industria", colorHex: "#50CAA5", requiresRoomType: "LAB", cognitiveWeight: 3 },
+  { name: "Atención de Párvulos", code: "TP_APV", category: "TP", subGroup: "Salud y Educación", colorHex: "#FF7EA4", requiresRoomType: "WORKSHOP_TP", cognitiveWeight: 2 },
+  { name: "Atención de Enfermería", code: "TP_AEN", category: "TP", subGroup: "Salud y Educación", colorHex: "#FF488B", requiresRoomType: "LAB", cognitiveWeight: 2 },
+  { name: "Conectividad y Redes", code: "TP_CRE", category: "TP", subGroup: "Tecnología y Comunicaciones", colorHex: "#00B7F0", requiresRoomType: "COMPUTER_LAB", cognitiveWeight: 3 },
+  { name: "Telecomunicaciones", code: "TP_TEL", category: "TP", subGroup: "Tecnología y Comunicaciones", colorHex: "#59C2F2", requiresRoomType: "COMPUTER_LAB", cognitiveWeight: 3 },
+  { name: "Programación", code: "TP_PRO", category: "TP", subGroup: "Tecnología y Comunicaciones", colorHex: "#3F69BD", requiresRoomType: "COMPUTER_LAB", cognitiveWeight: 3 },
+];
+
+export const RULE_EXAMPLES: Record<SchedulingRuleType, string[]> = {
+  TEACHER_UNAVAILABILITY: [
+    "Un docente trabaja en otro colegio los martes y jueves por la mañana.",
+    "Una profesora tiene permiso administrativo todos los viernes después del bloque 5.",
+  ],
+  MAX_TEACHER_WINDOWS: [
+    "Evitar que los docentes tengan más de 2 bloques libres intermedios (ventanas) en la semana.",
+    "Priorizar horarios continuos para profesores con jornada parcial.",
+  ],
+  MAX_CONSECUTIVE_TEACHER_BLOCKS: [
+    "Impedir que un docente dicte más de 4 bloques seguidos sin descanso.",
+    "Proteger la voz y descanso en docentes de Básica con carga completa.",
+  ],
+  FIRST_LAST_BLOCK_EQUITY: [
+    "Repartir de forma justa los bloques de 08:00 y última hora entre todo el cuerpo docente.",
+    "Evitar que al mismo profesor le toquen siempre los viernes en el último bloque.",
+  ],
+  TEACHER_DAY_COMPACTNESS: [
+    "Un profesor por hora (12 bloques) necesita concentrar sus clases en máximo 2 o 3 días.",
+    "Reducir traslados semanales de profesores que asisten solo a talleres.",
+  ],
+  TEACHER_DAILY_BLOCKS_LIMIT: [
+    "Evitar que un docente deba venir al colegio por 1 solo bloque aislado (mínimo 2 diarios).",
+    "Limitar la jornada diaria de un docente a máximo 6 bloques lectivos.",
+  ],
+  TEACHER_GUARANTEED_LUNCH_BREAK: [
+    "En colegios con almuerzo escalonado (bloques 5 y 6), asegurar que todo profesor tenga al menos 1 bloque libre para almorzar.",
+  ],
+  SYNCED_DEPARTMENT_MEETING: [
+    "Dejar libres al mismo tiempo a todos los profesores de Matemática para su reunión semanal de departamento.",
+    "Reservar 2 bloques comunes para el equipo de Lenguaje.",
+  ],
+  TEACHER_CAMPUS_TRAVEL: [
+    "Un docente que dicta clases en Sede Central y Anexo necesita 1 bloque libre entre medio para trasladarse.",
+  ],
+  SUBJECT_PREFERRED_TIME_RANGE: [
+    "Priorizar Matemática y Lenguaje en los bloques de la mañana (bloques 1 a 4).",
+    "Ubicar talleres artísticos o deportivos preferentemente en la tarde.",
+  ],
+  MAX_DAILY_BLOCKS_PER_SUBJECT: [
+    "Limitar Matemática a máximo 2 bloques por día en cada curso para no fatigar a los estudiantes.",
+    "Evitar que un curso tenga 3 bloques de Inglés el mismo día.",
+  ],
+  CONSECUTIVE_BLOCKS_POLICY: [
+    "Exigir que Educación Física y Laboratorio de Ciencias se dicten siempre en bloques dobles (90 min).",
+    "Preferir pares consecutivos para Artes Visuales y Tecnología.",
+  ],
+  PRIORITIZE_PAIR_GROUPS: [
+    "Alinear bloques dobles dentro del mismo par entre recreos (1-2, 3-4, 5-6) sin que un recreo corte la clase.",
+  ],
+  WEEKLY_SPREAD_BALANCE: [
+    "Distribuir una asignatura de 4 o 6 bloques a lo largo de la semana en vez de concentrarla lunes y martes.",
+  ],
+  NO_SAME_SUBJECT_AROUND_LUNCH: [
+    "Evitar que un curso tenga Historia justo antes de almuerzo y vuelva a tener Historia justo después.",
+  ],
+  NO_ADJACENT_SIMILAR_SUBJECTS: [
+    "No juntar dos asignaturas de idiomas seguidas (ej. Lenguaje inmediatamente antes o después de Inglés).",
+  ],
+  EXTENDED_BLOCKS_POLICY: [
+    "Agrupar talleres Técnico-Profesionales (TP) en sesiones continuas de 3 o 4 bloques seguidos.",
+  ],
+  FIXED_SUBJECT_SLOT: [
+    "Fijar Consejo de Curso los miércoles en el bloque 1 para todos los cursos.",
+    "Anclar Orientación el viernes en el último bloque.",
+  ],
+  SUBJECT_MIN_DAY_SPACING: [
+    "Si un curso tiene 2 sesiones semanales de Ciencias, dejar al menos 1 día de separación entre ellas (ej. lunes y miércoles).",
+  ],
+  MAX_DAILY_COGNITIVE_LOAD: [
+    "Evitar que un curso tenga Matemática, Física, Química e Historia concentradas en el mismo día.",
+  ],
+  NO_SUBJECT_POST_LUNCH: [
+    "Evitar programar Educación Física en el primer bloque después del almuerzo.",
+  ],
+  SUBJECT_PRECEDENCE: [
+    "Asegurar que la clase teórica de Química ocurra antes en la semana que su Taller de Laboratorio.",
+  ],
+  SHARED_ROOM_CAPACITY: [
+    "Controlar que no se programen más cursos simultáneos en el Gimnasio o Laboratorio que los que caben físicamente.",
+  ],
+  ROOM_TRAVEL_TIME: [
+    "Evitar que un curso pase de Gimnasio a Laboratorio en bloques consecutivos sin recreo intermedio.",
+  ],
+  ROOM_ACCESSIBILITY_FLOOR: [
+    "Mantener a 1° y 2° Básico (o cursos con estudiantes de movilidad reducida) siempre en salas de 1° piso.",
+  ],
+  ROOM_STUDENT_CAPACITY: [
+    "Impedir que un curso de 42 estudiantes sea asignado a un laboratorio con aforo máximo de 30.",
+  ],
+  ROOM_EQUIPMENT_REQUIREMENT: [
+    "Exigir que Programación use únicamente salas etiquetadas con 'PC' o 'Proyector'.",
+  ],
+  MINIMIZE_COURSE_ROOM_CHANGES: [
+    "Cuando el colegio usa salas rotativas, limitar a máximo 1 o 2 cambios de sala por día para cada curso.",
+  ],
+  SYNC_GROUP_SIMULTANEITY: [
+    "Hacer que todos los electivos de 3° Medio (grupo ELECTIVOS_3M) ocurran exactamente a la misma hora en salas distintas.",
+  ],
+  FIXED_SYNC_GROUP_SLOT: [
+    "Fijar los Talleres JEC (grupo TALLER_JEC) obligatoriamente los miércoles en bloques 7 y 8.",
+  ],
+  PIE_CO_TEACHING_SYNC: [
+    "Garantizar que en los bloques con Apoyo PIE estén disponibles simultáneamente el profesor titular y la educadora diferencial.",
+  ],
+  ALLOW_COURSE_WINDOWS: [
+    "Solo activar si el colegio permite bloques libres intermedios en el horario de los estudiantes (poco común en Chile).",
+  ],
+  ROOM_ASSIGNMENT_MODE: [
+    "Configurado en el paso Salas: define si cada curso tiene sala fija o si los estudiantes rotan por asignatura.",
+  ],
+  LEY_20903_POLICY: [
+    "Aplicar proporción 65/35 general o 60/40 en 1° a 4° Básico para validar topes lectivos según contrato docente.",
+  ],
+};

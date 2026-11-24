@@ -93,11 +93,26 @@ function normalizeKey(v: string): string {
 }
 
 function parseRoomType(raw: string): RoomType {
-  const up = raw.toUpperCase();
-  if (up.includes("LAB") && up.includes("COMP")) return "COMPUTER_LAB";
-  if (up.includes("COMP")) return "COMPUTER_LAB";
-  if (up.includes("LAB")) return "LAB";
+  const up = raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+  if ((up.includes("LAB") && up.includes("COMP")) || up.includes("COMPUT") || up.includes("ENLACE")) {
+    return "COMPUTER_LAB";
+  }
+  if (up.includes("IDIOM") || up.includes("INGLES") || up.includes("LANGU")) return "LANGUAGE_LAB";
+  if (up.includes("LAB") || up.includes("CIENC") || up.includes("QUIM") || up.includes("BIO") || up.includes("FISIC")) {
+    return "LAB";
+  }
+  if (up.includes("BIBLIOT") || up.includes("CRA")) return "LIBRARY_CRA";
+  if (up.includes("PIE") || up.includes("APOYO") || up.includes("RECURSO")) return "PIE_ROOM";
+  if (up.includes("MUSIC")) return "MUSIC_ROOM";
+  if (up.includes("ARTE") || up.includes("ART_")) return "ART_ROOM";
+  if (up.includes("AUDITOR") || up.includes("SALON DE ACTOS")) return "AUDITORIUM";
+  if (up.includes("PATIO") || up.includes("MULTICANCHA")) return "PATIO";
   if (up.includes("GYM") || up.includes("GIMN") || up.includes("CANCH")) return "GYM";
+  if (up.includes("TP") || up.includes("TECNICO")) return "WORKSHOP_TP";
+  if (up.includes("MULTIUSO") || up.includes("TALLER") || up.includes("DANZA")) return "MULTIPURPOSE";
   return "CLASSROOM";
 }
 

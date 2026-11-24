@@ -156,6 +156,7 @@ export async function POST(request: Request) {
       case "subject": {
         const name = String(body.data.name || "").trim();
         const code = String(body.data.code || name.slice(0, 3)).trim().toUpperCase();
+        const colorHex = String(body.data.colorHex || "#2563EB").trim().toUpperCase();
         const requiresRoomType = body.data.requiresRoomType
           ? (body.data.requiresRoomType as RoomType)
           : null;
@@ -172,6 +173,7 @@ export async function POST(request: Request) {
             schoolId,
             name,
             code,
+            colorHex,
             requiresRoomType,
             requiredRoomId,
             cognitiveWeight: Number.isFinite(cognitiveWeight) ? Math.max(1, Math.min(3, cognitiveWeight)) : 1,
@@ -179,6 +181,120 @@ export async function POST(request: Request) {
           },
         });
         return NextResponse.json({ item }, { status: 201 });
+      }
+
+      case "bulkCreateSubjects": {
+        const rawItems = Array.isArray(body.data.items)
+          ? (body.data.items as Array<{
+              name: string;
+              code: string;
+              colorHex?: string;
+              requiresRoomType?: RoomType | null;
+              cognitiveWeight?: number;
+            }>)
+          : [];
+        if (rawItems.length === 0) {
+          throw new Error("Selecciona al menos una asignatura para agregar.");
+        }
+        const existing = await prisma.subject.findMany({
+          where: { schoolId },
+          select: { code: true },
+        });
+        const existingCodes = new Set(existing.map((s) => s.code.toUpperCase()));
+        const toCreate = rawItems
+          .filter((item) => item.name?.trim() && item.code?.trim())
+          .filter((item) => !existingCodes.has(item.code.trim().toUpperCase()))
+          .map((item) => ({
+            schoolId,
+            name: item.name.trim(),
+            code: item.code.trim().toUpperCase(),
+            colorHex: String(item.colorHex || "#2563EB").trim().toUpperCase(),
+            requiresRoomType: item.requiresRoomType ?? null,
+            cognitiveWeight: Number.isFinite(Number(item.cognitiveWeight))
+              ? Math.max(1, Math.min(3, Number(item.cognitiveWeight)))
+              : 1,
+          }));
+        if (toCreate.length > 0) {
+          await prisma.subject.createMany({ data: toCreate, skipDuplicates: true });
+        }
+        return NextResponse.json({ createdCount: toCreate.length }, { status: 201 });
+      }
+
+      case "bulkCreateCourseRooms": {
+        const courseIds = Array.isArray(body.data.courseIds)
+          ? (body.data.courseIds as string[]).filter(Boolean)
+          : null;
+        const targetCourses = await prisma.course.findMany({
+          where: {
+            schoolId,
+            defaultRoomId: null,
+            ...(courseIds && courseIds.length > 0 ? { id: { in: courseIds } } : {}),
+          },
+          orderBy: { name: "asc" },
+        });
+        let createdCount = 0;
+        await prisma.$transaction(async (tx) => {
+          for (const course of targetCourses) {
+            const roomId = await resolveAutoDefaultRoomId(tx, {
+              schoolId,
+              courseName: course.name,
+              excludeCourseId: course.id,
+              capacity: Math.max(course.studentCount, DEFAULT_AUTO_ROOM_CAPACITY),
+            });
+            await tx.course.update({
+              where: { id: course.id },
+              data: { defaultRoomId: roomId },
+            });
+            createdCount++;
+          }
+        });
+        return NextResponse.json({ createdCount }, { status: 201 });
+      }
+
+      case "copyCoursePlan": {
+        const sourceCourseId = String(body.data.sourceCourseId || "");
+        const targetCourseIds = Array.isArray(body.data.targetCourseIds)
+          ? (body.data.targetCourseIds as string[]).filter((id) => id && id !== sourceCourseId)
+          : [];
+        if (!sourceCourseId || targetCourseIds.length === 0) {
+          throw new Error("Debes elegir el curso origen y al menos un curso destino.");
+        }
+        const sourceSubjects = await prisma.courseSubject.findMany({
+          where: { courseId: sourceCourseId, course: { schoolId } },
+          include: { teachers: true },
+        });
+        let copiedCount = 0;
+        await prisma.$transaction(async (tx) => {
+          for (const targetId of targetCourseIds) {
+            const existingInTarget = await tx.courseSubject.findMany({
+              where: { courseId: targetId, course: { schoolId } },
+              select: { subjectId: true },
+            });
+            const existingSubIds = new Set(existingInTarget.map((cs) => cs.subjectId));
+            for (const src of sourceSubjects) {
+              if (existingSubIds.has(src.subjectId)) continue;
+              await tx.courseSubject.create({
+                data: {
+                  courseId: targetId,
+                  subjectId: src.subjectId,
+                  weeklyBlocks: src.weeklyBlocks,
+                  requiresConsecutiveBlocks: src.requiresConsecutiveBlocks,
+                  syncGroupCode: src.syncGroupCode,
+                  isSplitClass: src.isSplitClass,
+                  teachers: {
+                    create: src.teachers.map((t) => ({
+                      teacherId: t.teacherId,
+                      role: t.role,
+                      assignedBlocks: t.assignedBlocks,
+                    })),
+                  },
+                },
+              });
+              copiedCount++;
+            }
+          }
+        });
+        return NextResponse.json({ copiedCount }, { status: 201 });
       }
 
       case "teacher": {
@@ -416,6 +532,10 @@ export async function PATCH(request: Request) {
         }
         const name = String(body.data.name || existing.name).trim();
         const code = String(body.data.code || existing.code).trim().toUpperCase();
+        const colorHex =
+          body.data.colorHex !== undefined
+            ? String(body.data.colorHex || existing.colorHex).trim().toUpperCase()
+            : existing.colorHex;
         const requiresRoomType =
           body.data.requiresRoomType !== undefined
             ? body.data.requiresRoomType
@@ -442,7 +562,15 @@ export async function PATCH(request: Request) {
 
         const item = await prisma.subject.update({
           where: { id: body.id },
-          data: { name, code, requiresRoomType, requiredRoomId, cognitiveWeight, requiredEquipment },
+          data: {
+            name,
+            code,
+            colorHex,
+            requiresRoomType,
+            requiredRoomId,
+            cognitiveWeight,
+            requiredEquipment,
+          },
         });
         return NextResponse.json({ item });
       }
@@ -516,6 +644,13 @@ export async function PATCH(request: Request) {
             ? Number(body.data.maxTeachingBlocks)
             : legalMax;
 
+        const subjectIds = Array.isArray(body.data.subjectIds)
+          ? (body.data.subjectIds as string[]).filter(Boolean)
+          : null;
+        const levelCodes = Array.isArray(body.data.levelCodes)
+          ? (body.data.levelCodes as LevelCode[]).filter(Boolean)
+          : null;
+
         const item = await prisma.teacher.update({
           where: { id: body.id },
           data: {
@@ -527,11 +662,37 @@ export async function PATCH(request: Request) {
                   ? String(body.data.email).trim()
                   : null
                 : existing.email,
+            phone:
+              body.data.phone !== undefined
+                ? body.data.phone
+                  ? String(body.data.phone).trim()
+                  : null
+                : existing.phone,
             contractHours,
             maxTeachingBlocks,
             maxDailyHours: Number(body.data.maxDailyHours ?? existing.maxDailyHours),
             ley20903Ratio,
             colorHex: String(body.data.colorHex ?? existing.colorHex),
+            ...(subjectIds !== null
+              ? {
+                  qualifiedSubjects: {
+                    deleteMany: {},
+                    create: subjectIds.map((subjectId) => ({ subjectId })),
+                  },
+                }
+              : {}),
+            ...(levelCodes !== null
+              ? {
+                  qualifiedLevels: {
+                    deleteMany: {},
+                    create: levelCodes.map((levelCode) => ({ levelCode })),
+                  },
+                }
+              : {}),
+          },
+          include: {
+            qualifiedSubjects: { include: { subject: true } },
+            qualifiedLevels: true,
           },
         });
         return NextResponse.json({ item });
@@ -638,43 +799,92 @@ export async function PATCH(request: Request) {
             }>)
           : null;
 
-        const item = await prisma.courseSubject.update({
-          where: { id: body.id },
-          data: {
-            courseId: nextCourseId,
-            subjectId: nextSubjectId,
-            weeklyBlocks:
-              body.data.weeklyBlocks !== undefined
-                ? Number(body.data.weeklyBlocks) || existing.weeklyBlocks
-                : existing.weeklyBlocks,
-            requiresConsecutiveBlocks:
-              body.data.requiresConsecutiveBlocks !== undefined
-                ? Boolean(body.data.requiresConsecutiveBlocks)
-                : existing.requiresConsecutiveBlocks,
-            syncGroupCode: nextSyncGroupCode,
-            isSplitClass:
-              body.data.isSplitClass !== undefined
-                ? Boolean(body.data.isSplitClass)
-                : Boolean(nextSyncGroupCode),
-            ...(teachersInput
-              ? {
-                  teachers: {
-                    deleteMany: {},
-                    create: teachersInput.map((t) => ({
-                      teacherId: t.teacherId,
-                      role: t.role ?? "LEAD",
-                      assignedBlocks: t.assignedBlocks ?? null,
-                    })),
+        const shouldPropagateSyncRename =
+          Boolean(body.data.propagateSyncRename) &&
+          Boolean(existing.syncGroupCode) &&
+          Boolean(nextSyncGroupCode) &&
+          existing.syncGroupCode !== nextSyncGroupCode;
+
+        const { item, propagatedCount } = await prisma.$transaction(async (tx) => {
+          const updatedItem = await tx.courseSubject.update({
+            where: { id: body.id },
+            data: {
+              courseId: nextCourseId,
+              subjectId: nextSubjectId,
+              weeklyBlocks:
+                body.data.weeklyBlocks !== undefined
+                  ? Number(body.data.weeklyBlocks) || existing.weeklyBlocks
+                  : existing.weeklyBlocks,
+              requiresConsecutiveBlocks:
+                body.data.requiresConsecutiveBlocks !== undefined
+                  ? Boolean(body.data.requiresConsecutiveBlocks)
+                  : existing.requiresConsecutiveBlocks,
+              syncGroupCode: nextSyncGroupCode,
+              isSplitClass:
+                body.data.isSplitClass !== undefined
+                  ? Boolean(body.data.isSplitClass)
+                  : Boolean(nextSyncGroupCode),
+              ...(teachersInput
+                ? {
+                    teachers: {
+                      deleteMany: {},
+                      create: teachersInput.map((t) => ({
+                        teacherId: t.teacherId,
+                        role: t.role ?? "LEAD",
+                        assignedBlocks: t.assignedBlocks ?? null,
+                      })),
+                    },
+                  }
+                : {}),
+            },
+            include: {
+              subject: true,
+              teachers: { include: { teacher: true } },
+            },
+          });
+
+          let extraUpdated = 0;
+          if (shouldPropagateSyncRename && existing.syncGroupCode && nextSyncGroupCode) {
+            const bulkRes = await tx.courseSubject.updateMany({
+              where: {
+                id: { not: body.id },
+                course: { schoolId },
+                syncGroupCode: existing.syncGroupCode,
+              },
+              data: {
+                syncGroupCode: nextSyncGroupCode,
+                isSplitClass: true,
+              },
+            });
+            extraUpdated = bulkRes.count;
+
+            // Actualizar también reglas de bloque fijo que apunten al nombre anterior del grupo
+            const syncRules = await tx.schedulingRule.findMany({
+              where: { schoolId, ruleType: "FIXED_SYNC_GROUP_SLOT" },
+            });
+            for (const rule of syncRules) {
+              const params = (rule.parameters ?? {}) as Record<string, unknown>;
+              if (
+                typeof params.syncGroupCode === "string" &&
+                params.syncGroupCode.trim() === existing.syncGroupCode
+              ) {
+                await tx.schedulingRule.update({
+                  where: { id: rule.id },
+                  data: {
+                    parameters: {
+                      ...params,
+                      syncGroupCode: nextSyncGroupCode,
+                    } as Prisma.InputJsonValue,
                   },
-                }
-              : {}),
-          },
-          include: {
-            subject: true,
-            teachers: { include: { teacher: true } },
-          },
+                });
+              }
+            }
+          }
+
+          return { item: updatedItem, propagatedCount: extraUpdated };
         });
-        return NextResponse.json({ item });
+
+        return NextResponse.json({ item, propagatedCount });
       }
 
       case "courseSubjectBulkSync": {

@@ -21,7 +21,7 @@ export async function GET(
         status: 200,
         headers: {
           "Content-Type": "application/zip",
-          "Content-Disposition": `attachment; filename="horarios_edukit_${versionId.slice(0, 8)}.zip"`,
+          "Content-Disposition": `attachment; filename="horarios_profekit_${versionId.slice(0, 8)}.zip"`,
         },
       });
     }

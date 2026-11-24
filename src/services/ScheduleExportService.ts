@@ -306,7 +306,7 @@ export const ScheduleExportService = {
       title: `Horario de Curso: ${course.name}`,
       subtitle: `Jornada: ${course.bellSchedule.name} | Total bloques: ${version.entries.length}`,
       rows,
-      footerSummary: `Generado por EduKit - Fitness del horario: ${version.fitnessScore}/100`,
+      footerSummary: `Generado por ProfeKit Horarios - Fitness del horario: ${version.fitnessScore}/100`,
     });
   },
 
@@ -423,7 +423,7 @@ export const ScheduleExportService = {
       title: `Horario Docente: ${teacher.firstName} ${teacher.lastName}`,
       subtitle: `Contrato: ${teacher.contractHours}h (${breakdown.ratioLabel}) | Lectivos: ${version.entries.length}/${breakdown.legalMaxTeachingBlocks} blq (${breakdown.actualTeachingPct}%) | No lectivos min: ${formatChronologicalMinutes(breakdown.minNonTeachingChronologicalMinutes)} (agendados: ${version.nonTeachingActivities.length} blq)`,
       rows,
-      footerSummary: `Generado por EduKit - Ley 20.903 (${breakdown.ratioLabel}, bloque ${breakdown.blockDurationMinutes}m${breakdown.breakMinutesPerBlock > 0 ? ` + ${breakdown.breakMinutesPerBlock}m recreo` : ""})`,
+      footerSummary: `Generado por ProfeKit Horarios - Ley 20.903 (${breakdown.ratioLabel}, bloque ${breakdown.blockDurationMinutes}m${breakdown.breakMinutesPerBlock > 0 ? ` + ${breakdown.breakMinutesPerBlock}m recreo` : ""})`,
     });
   },
 
@@ -501,7 +501,7 @@ export const ScheduleExportService = {
       title: `Ocupacion de Recinto: ${room.name}`,
       subtitle: `Tipo: ${room.roomType} | Capacidad: ${room.capacity} | Bloques ocupados: ${version.entries.length}`,
       rows,
-      footerSummary: `Generado por EduKit - Programacion de Espacios Compartidos`,
+      footerSummary: `Generado por ProfeKit Horarios - Programacion de Espacios Compartidos`,
     });
   },
 
@@ -729,7 +729,7 @@ export const ScheduleExportService = {
       }
 
       page.drawText(
-        sanitizeText(`Generado por EduKit - Formato Carta Horizontal | Fitness: ${version.fitnessScore}/100`),
+        sanitizeText(`Generado por ProfeKit Horarios - Formato Carta Horizontal | Fitness: ${version.fitnessScore}/100`),
         {
           x: margin,
           y: margin - 6,

@@ -1,20 +1,27 @@
 "use client";
 
 import React, { useState } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Loader2, Lock, Mail, ShieldCheck, Building2 } from "lucide-react";
-import { AppNavbar } from "@/components/AppNavbar";
-import { AppFooter } from "@/components/AppFooter";
+import { Building2, Loader2, Lock, Mail, Moon, ShieldCheck, Sun } from "lucide-react";
+import { EduKitLogo } from "@/components/EduKitLogo";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/components/ui/toast";
+import { useTheme } from "@/context/ThemeContext";
 
 export default function LoginPage() {
   const router = useRouter();
   const { showToast } = useToast();
+  const { theme, toggleTheme } = useTheme();
   const [email, setEmail] = useState("utp@edukit.cl");
   const [password, setPassword] = useState("Admin123!");
   const [loading, setLoading] = useState(false);
@@ -51,22 +58,20 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="page-wrapper relative">
-      <div className="bg-mesh" aria-hidden="true" />
-      <AppNavbar />
+    <div className="flex h-screen w-screen flex-col bg-muted/30">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b bg-background px-6">
+        <EduKitLogo width={132} height={36} imageClassName="h-7 w-auto" />
+        <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Cambiar tema">
+          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </Button>
+      </header>
 
-      <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-12">
-        <Card className="w-full max-w-md">
+      <main className="flex flex-1 items-center justify-center p-8">
+        <Card className="w-full max-w-md shadow-sm">
           <CardHeader className="space-y-1.5 text-center">
-            <Image
-              src="/isotipo_450.png"
-              alt="EduKit"
-              width={56}
-              height={56}
-              priority
-              className="mx-auto mb-1 h-14 w-14 rounded-2xl object-cover shadow-[var(--shadow-btn)]"
-            />
-            <CardTitle className="text-2xl">Acceso a EduKit</CardTitle>
+            <CardTitle className="text-xl font-semibold tracking-tight">
+              Iniciar sesión en EduKit
+            </CardTitle>
             <CardDescription>
               Ingresa con tu cuenta de Dirección, UTP o Super Administrador.
             </CardDescription>
@@ -76,7 +81,7 @@ export default function LoginPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="login-email">Correo electrónico</Label>
                 <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)]" />
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="login-email"
                     type="email"
@@ -84,7 +89,7 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="utp@colegio.cl"
-                    className="h-10 pl-9"
+                    className="pl-9"
                   />
                 </div>
               </div>
@@ -92,7 +97,7 @@ export default function LoginPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="login-password">Contraseña</Label>
                 <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)]" />
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="login-password"
                     type="password"
@@ -100,57 +105,63 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="h-10 pl-9"
+                    className="pl-9"
                   />
                 </div>
               </div>
 
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                Ingresar al módulo
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Ingresar
               </Button>
             </form>
 
-            <div className="space-y-2 border-t border-[var(--border-subtle)] pt-4">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-                Cuentas demo precargadas
+            <Separator />
+
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                Cuentas de prueba
               </p>
               <div className="grid grid-cols-2 gap-2">
-                <button
+                <Button
                   type="button"
+                  variant="outline"
+                  className="h-auto flex-col items-start gap-0.5 px-3 py-2 text-left"
                   onClick={() => {
                     setEmail("utp@edukit.cl");
                     setPassword("Admin123!");
                   }}
-                  className="flex flex-col items-start gap-0.5 rounded-xl border border-[var(--border-card)] bg-[var(--bg-card-subtle)] p-2.5 text-left transition-colors hover:border-[var(--accent-1)] cursor-pointer"
                 >
-                  <span className="flex items-center gap-1 text-xs font-semibold text-[var(--text-primary)]">
-                    <Building2 className="h-3.5 w-3.5 text-[var(--accent-1)]" />
+                  <span className="flex items-center gap-1.5 text-xs font-medium">
+                    <Building2 className="h-3.5 w-3.5 text-primary" />
                     Admin Colegio
                   </span>
-                  <span className="text-[11px] text-[var(--text-muted)]">utp@edukit.cl</span>
-                </button>
-                <button
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    utp@edukit.cl
+                  </span>
+                </Button>
+                <Button
                   type="button"
+                  variant="outline"
+                  className="h-auto flex-col items-start gap-0.5 px-3 py-2 text-left"
                   onClick={() => {
                     setEmail("superadmin@edukit.cl");
                     setPassword("Admin123!");
                   }}
-                  className="flex flex-col items-start gap-0.5 rounded-xl border border-[var(--border-card)] bg-[var(--bg-card-subtle)] p-2.5 text-left transition-colors hover:border-[var(--accent-1)] cursor-pointer"
                 >
-                  <span className="flex items-center gap-1 text-xs font-semibold text-[var(--text-primary)]">
-                    <ShieldCheck className="h-3.5 w-3.5 text-[var(--accent-2)]" />
+                  <span className="flex items-center gap-1.5 text-xs font-medium">
+                    <ShieldCheck className="h-3.5 w-3.5 text-primary" />
                     Super Admin
                   </span>
-                  <span className="text-[11px] text-[var(--text-muted)]">superadmin@edukit.cl</span>
-                </button>
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    superadmin@edukit.cl
+                  </span>
+                </Button>
               </div>
             </div>
           </CardContent>
         </Card>
       </main>
-
-      <AppFooter />
     </div>
   );
 }

@@ -41,32 +41,29 @@ interface ToastContextValue {
   dismissToast: (id: number) => void;
 }
 
-const TOAST_DURATION_MS = 5000;
+const TOAST_DURATION_MS = 4500;
 const MAX_VISIBLE_TOASTS = 3;
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 const variantStyles: Record<
   ToastVariant,
-  { Icon: LucideIcon; icon: string; title: string; border: string }
+  { Icon: LucideIcon; icon: string; border: string }
 > = {
   success: {
     Icon: CheckCircle2,
-    icon: "text-emerald-700 dark:text-emerald-400",
-    title: "text-emerald-950 dark:text-emerald-200",
-    border: "border-emerald-500/35",
+    icon: "text-emerald-600 dark:text-emerald-400",
+    border: "border-emerald-500/30",
   },
   error: {
     Icon: AlertCircle,
-    icon: "text-red-700 dark:text-red-400",
-    title: "text-red-950 dark:text-red-200",
-    border: "border-red-500/35",
+    icon: "text-destructive",
+    border: "border-destructive/40",
   },
   info: {
     Icon: Info,
-    icon: "text-[#0353a4] dark:text-[#87c2fd]",
-    title: "text-[#023e7d] dark:text-[#87c2fd]",
-    border: "border-[#0353a4]/35 dark:border-[#87c2fd]/35",
+    icon: "text-primary",
+    border: "border-primary/30",
   },
 };
 
@@ -90,21 +87,20 @@ function ToastCard({
     <aside
       role={toast.variant === "error" ? "alert" : "status"}
       className={cn(
-        "pointer-events-auto flex w-full items-start gap-3 rounded-lg border bg-[var(--bg-card)]/95 p-3.5 shadow-xl backdrop-blur-md",
-        "transition-all duration-200",
+        "pointer-events-auto flex w-full items-start gap-3 rounded-lg border bg-card p-3.5 text-card-foreground shadow-lg",
         styles.border
       )}
     >
       <Icon
-        size={20}
+        size={18}
         className={cn("mt-0.5 shrink-0", styles.icon, toast.loading && "animate-spin")}
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1 space-y-0.5">
-        <p className={cn("text-xs font-bold leading-tight", styles.title)}>
+        <p className="text-xs font-semibold leading-tight text-foreground">
           {toast.title}
         </p>
-        <p className="text-[11px] leading-snug text-[var(--text-secondary)]">
+        <p className="text-xs leading-snug text-muted-foreground">
           {toast.description}
         </p>
       </div>
@@ -112,7 +108,7 @@ function ToastCard({
         type="button"
         onClick={() => onDismiss(toast.id)}
         aria-label="Cerrar notificación"
-        className="shrink-0 rounded-md p-1 text-[var(--text-muted)] transition-colors hover:bg-white/10 hover:text-[var(--text-primary)]"
+        className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       >
         <X size={14} aria-hidden="true" />
       </button>
@@ -150,7 +146,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {mounted &&
         toasts.length > 0 &&
         createPortal(
-          <div className="pointer-events-none fixed bottom-4 right-4 z-[200] flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-2">
+          <div className="pointer-events-none fixed bottom-4 right-4 z-[200] flex w-96 flex-col gap-2">
             {toasts.map((toast) => (
               <ToastCard key={toast.id} toast={toast} onDismiss={dismissToast} />
             ))}

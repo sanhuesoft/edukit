@@ -51,6 +51,7 @@ export interface SubjectDTO {
   id: string;
   name: string;
   code: string;
+  colorHex: string;
   requiresRoomType: RoomType | null;
   requiredRoomId?: string | null;
   cognitiveWeight?: number;

@@ -1,26 +1,52 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
-  AlertTriangle,
-  CalendarDays,
+  BookOpen,
+  CalendarCheck2,
   CheckCircle2,
-  Cpu,
-  Download,
+  Clock,
+  DoorOpen,
+  FileSpreadsheet,
+  GraduationCap,
+  Layers,
   Loader2,
-  Play,
-  Settings2,
-  ShieldCheck,
-  Sparkles,
+  LogOut,
+  Moon,
+  SlidersHorizontal,
+  Sun,
+  Upload,
+  Users,
 } from "lucide-react";
+import { EduKitLogo } from "@/components/EduKitLogo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import { ScheduleGridView } from "./ScheduleGridView";
-import { AcademicSetupTab } from "./AcademicSetupTab";
-import { RulesAndAITab } from "./RulesAndAITab";
-import { OperationsAndExportTab } from "./OperationsAndExportTab";
+import { useTheme } from "@/context/ThemeContext";
+import { StepJornada } from "./steps/StepJornada";
+import { StepCursos } from "./steps/StepCursos";
+import { StepSalas } from "./steps/StepSalas";
+import { StepAsignaturas } from "./steps/StepAsignaturas";
+import { StepDocentes } from "./steps/StepDocentes";
+import { StepPlanEstudios } from "./steps/StepPlanEstudios";
+import { StepReglas } from "./steps/StepReglas";
+import { StepResultado } from "./steps/StepResultado";
 import type {
   ConflictAuditResult,
   PreconditionResult,
@@ -29,11 +55,33 @@ import type {
 } from "./types";
 import type { SessionUser } from "@/lib/auth";
 
-type MainTab = "grid" | "setup" | "rules_ai" | "operations";
+type StepId =
+  | "jornada"
+  | "cursos"
+  | "salas"
+  | "asignaturas"
+  | "docentes"
+  | "plan"
+  | "reglas"
+  | "resultado";
+
+const STEPS_ORDER: StepId[] = [
+  "jornada",
+  "cursos",
+  "salas",
+  "asignaturas",
+  "docentes",
+  "plan",
+  "reglas",
+  "resultado",
+];
 
 export function HorariosWorkspace({ user }: { user: SessionUser }) {
+  const router = useRouter();
   const { showToast } = useToast();
-  const [tab, setTab] = useState<MainTab>("grid");
+  const { theme, toggleTheme } = useTheme();
+
+  const [activeStep, setActiveStep] = useState<StepId>("jornada");
   const [loading, setLoading] = useState(true);
   const [setup, setSetup] = useState<SchoolSetupPayload | null>(null);
   const [schools, setSchools] = useState<
@@ -44,6 +92,11 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
   const [audit, setAudit] = useState<ConflictAuditResult | null>(null);
   const [preconditions, setPreconditions] = useState<PreconditionResult | null>(null);
   const [generating, setGenerating] = useState(false);
+
+  // Import Excel modal
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const loadVersion = useCallback(async (versionId: string) => {
     if (!versionId) {
@@ -72,7 +125,13 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
         ]);
         if (schoolsRes.ok) {
           const sData = (await schoolsRes.json()) as {
-            schools: Array<{ id: string; name: string; rbd: string; commune: string; academicYear: number }>;
+            schools: Array<{
+              id: string;
+              name: string;
+              rbd: string;
+              commune: string;
+              academicYear: number;
+            }>;
           };
           setSchools(sData.schools ?? []);
         }
@@ -107,6 +166,28 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const handleSelectVersion = async (versionId: string) => {
+    setActiveVersionId(versionId);
+    await loadVersion(versionId);
+  };
+
+  const handleSwitchSchool = async (schoolId: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/schools", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activeSchoolId: schoolId }),
+      });
+      if (res.ok) {
+        setActiveVersionId("");
+        await loadAll(undefined, true);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleValidate = async () => {
     const res = await fetch("/api/horarios/validate", { method: "POST" });
     if (res.ok) {
@@ -114,9 +195,9 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
       setPreconditions(data);
       showToast({
         variant: data.ready ? "success" : "error",
-        title: data.ready ? "Precondiciones válidas" : "Inconsistencias detectadas",
+        title: data.ready ? "Precondiciones válidas" : "Observaciones detectadas",
         description: data.ready
-          ? `${data.stats.totalBlocksToSchedule} bloques listos para programar en ${data.stats.courses} cursos.`
+          ? `${data.stats.totalBlocksToSchedule} bloques listos en ${data.stats.courses} cursos.`
           : `Se encontraron ${data.issues.length} observaciones antes de generar.`,
       });
     }
@@ -136,7 +217,6 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
         version?: { id: string; name: string };
         placedCount?: number;
         unplacedCount?: number;
-        audit?: ConflictAuditResult;
         error?: string;
       };
       if (!res.ok || !data.version) {
@@ -149,240 +229,406 @@ export function HorariosWorkspace({ user }: { user: SessionUser }) {
       }
       showToast({
         variant: "success",
-        title: `Nueva versión generada: ${data.version.name}`,
-        description: `${data.placedCount} bloques ubicados · Fitness ${data.audit?.fitnessScore ?? 0}/100.`,
+        title: "Horario generado",
+        description: `${data.placedCount ?? 0} bloques ubicados${
+          data.unplacedCount ? ` (${data.unplacedCount} pendientes)` : ""
+        }.`,
       });
-      await loadAll(data.version.id);
-      setTab("grid");
+      setPreconditions(null);
+      await loadAll(data.version.id, false);
     } finally {
       setGenerating(false);
     }
   };
 
-  const handlePublishToggle = async () => {
-    if (!versionDetail) return;
-    const nextStatus = versionDetail.status === "PUBLISHED" ? "DRAFT" : "PUBLISHED";
-    const res = await fetch(`/api/horarios/versions/${versionDetail.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: nextStatus }),
-    });
-    if (res.ok) {
+  const handleExcelImport = async () => {
+    if (!importFile) return;
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", importFile);
+      fd.append("mode", "commit");
+      const res = await fetch("/api/horarios/setup/import", {
+        method: "POST",
+        body: fd,
+      });
+      const data = (await res.json()) as {
+        imported?: boolean;
+        error?: string;
+        dryRun?: { summary?: { teachers: number; rooms: number; subjects: number; courses: number } };
+      };
+      if (!res.ok || data.imported === false) {
+        throw new Error(data.error || "El archivo tiene errores de validación.");
+      }
       showToast({
         variant: "success",
-        title: nextStatus === "PUBLISHED" ? "Horario Oficial Publicado" : "Movido a Borrador",
-        description: `Estado de "${versionDetail.name}" actualizado.`,
+        title: "Importación completada",
+        description: "Los datos académicos desde Excel fueron cargados correctamente.",
       });
-      await loadAll(versionDetail.id);
+      setImportFile(null);
+      setImportOpen(false);
+      await loadAll(undefined, false);
+    } catch (err) {
+      showToast({
+        variant: "error",
+        title: "No se pudo importar",
+        description: err instanceof Error ? err.message : "Verifica el formato del archivo.",
+      });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  };
+
+  const stepMeta = useMemo(() => {
+    const totalPlan =
+      setup?.courses.reduce((sum, c) => sum + c.courseSubjects.length, 0) ?? 0;
+    const activeRules =
+      setup?.rules.filter((r) => r.ruleType !== "ROOM_ASSIGNMENT_MODE").length ?? 0;
+
+    return [
+      {
+        id: "jornada" as StepId,
+        num: 1,
+        label: "Jornada",
+        icon: Clock,
+        count: setup?.bellSchedules.length ?? 0,
+        done: (setup?.bellSchedules.some((b) => b.timeSlots.length > 0) ?? false),
+      },
+      {
+        id: "cursos" as StepId,
+        num: 2,
+        label: "Cursos",
+        icon: GraduationCap,
+        count: setup?.courses.length ?? 0,
+        done: (setup?.courses.length ?? 0) > 0,
+      },
+      {
+        id: "salas" as StepId,
+        num: 3,
+        label: "Salas",
+        icon: DoorOpen,
+        count: setup?.rooms.length ?? 0,
+        done: (setup?.rooms.length ?? 0) > 0,
+      },
+      {
+        id: "asignaturas" as StepId,
+        num: 4,
+        label: "Asignaturas",
+        icon: BookOpen,
+        count: setup?.subjects.length ?? 0,
+        done: (setup?.subjects.length ?? 0) > 0,
+      },
+      {
+        id: "docentes" as StepId,
+        num: 5,
+        label: "Docentes",
+        icon: Users,
+        count: setup?.teachers.length ?? 0,
+        done: (setup?.teachers.length ?? 0) > 0,
+      },
+      {
+        id: "plan" as StepId,
+        num: 6,
+        label: "Plan de estudios",
+        icon: Layers,
+        count: totalPlan,
+        done: totalPlan > 0,
+      },
+      {
+        id: "reglas" as StepId,
+        num: 7,
+        label: "Reglas",
+        icon: SlidersHorizontal,
+        count: activeRules,
+        done: activeRules > 0,
+      },
+      {
+        id: "resultado" as StepId,
+        num: 8,
+        label: "Resultado",
+        icon: CalendarCheck2,
+        count: setup?.versions.length ?? 0,
+        done: (setup?.versions.length ?? 0) > 0,
+      },
+    ];
+  }, [setup]);
+
+  const goNextStep = () => {
+    const idx = STEPS_ORDER.indexOf(activeStep);
+    if (idx >= 0 && idx < STEPS_ORDER.length - 1) {
+      setActiveStep(STEPS_ORDER[idx + 1]);
     }
   };
 
   if (loading || !setup) {
     return (
-      <div className="flex min-h-[420px] items-center justify-center">
-        <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-          <Loader2 className="h-5 w-5 animate-spin text-[var(--accent-1)]" />
-          Cargando Generador de Horarios...
+      <div className="flex h-full w-full items-center justify-center bg-background">
+        <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          Cargando espacio de trabajo...
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-5">
-      {/* Header del módulo */}
-      <div className="flex flex-col gap-4 rounded-2xl border border-[var(--border-card)] bg-[var(--bg-card)] p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold text-[var(--text-primary)]">
-              {setup.school?.name ?? "Sin establecimiento"}
-            </h1>
-            {setup.school && (
-              <Badge variant="secondary">
-                RBD {setup.school.rbd} · Año {setup.school.academicYear}
-              </Badge>
-            )}
-            {versionDetail && (
-              <Badge variant={versionDetail.status === "PUBLISHED" ? "default" : "outline"}>
-                {versionDetail.status === "PUBLISHED" ? "Oficial Publicado" : "Borrador"} · Lock v
-                {versionDetail.versionLockNumber}
-              </Badge>
-            )}
-          </div>
-          <p className="text-xs text-[var(--text-secondary)]">
-            {setup.courses.length} cursos · {setup.teachers.length} docentes · {setup.rooms.length} salas ·{" "}
-            {setup.rules.length} reglas configuradas
-            {audit ? ` · Fitness actual: ${audit.fitnessScore}/100` : ""}
-          </p>
+    <div className="flex h-full w-full overflow-hidden bg-background">
+      {/* Sidebar fija izquierda con los 8 pasos */}
+      <aside className="flex w-64 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground">
+        {/* Marca */}
+        <div className="flex h-14 shrink-0 items-center justify-between border-b px-4">
+          <EduKitLogo width={120} height={32} imageClassName="h-6 w-auto" />
+          <Badge variant="outline" className="text-[10px] font-normal">
+            {setup.school?.academicYear ?? 2026}
+          </Badge>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {setup.versions.length > 0 && (
-            <select
-              aria-label="Versión de horario activa"
-              value={activeVersionId}
-              onChange={(e) => {
-                setActiveVersionId(e.target.value);
-                void loadVersion(e.target.value);
-              }}
-              className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-semibold text-[var(--text-primary)]"
+        {/* Selector de establecimiento */}
+        <div className="border-b px-3 py-2.5">
+          {user.role === "SUPER_ADMIN" && schools.length > 1 ? (
+            <Select
+              value={setup.school?.id ?? ""}
+              onValueChange={handleSwitchSchool}
             >
-              {setup.versions.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name} ({v.fitnessScore} pts · {v.status})
-                </option>
-              ))}
-            </select>
-          )}
-
-          <Button size="sm" variant="secondary" onClick={() => void handleValidate()}>
-            <ShieldCheck className="h-4 w-4" />
-            Validar
-          </Button>
-
-          <Button size="sm" disabled={generating} onClick={() => void handleGenerate()}>
-            {generating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="h-4 w-4" />
-            )}
-            Generar Horario
-          </Button>
-
-          {versionDetail && (
-            <Button size="sm" variant="neonOutline" onClick={() => void handlePublishToggle()}>
-              {versionDetail.status === "PUBLISHED" ? "Pasar a Borrador" : "Publicar Oficial"}
-            </Button>
+              <SelectTrigger className="h-8 bg-background text-xs">
+                <SelectValue placeholder="Establecimiento" />
+              </SelectTrigger>
+              <SelectContent>
+                {schools.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <div className="px-1">
+              <p className="truncate text-xs font-semibold">
+                {setup.school?.name ?? "Establecimiento"}
+              </p>
+              <p className="truncate text-[11px] text-muted-foreground">
+                RBD {setup.school?.rbd} · {setup.school?.commune}
+              </p>
+            </div>
           )}
         </div>
-      </div>
 
-      {/* Resultado de precondiciones si se ejecutó */}
-      {preconditions && (
-        <Card className={preconditions.ready ? "border-emerald-500/35" : "border-amber-500/40"}>
-          <CardContent className="p-4 space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                {preconditions.ready ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                ) : (
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
-                )}
-                <span>
-                  Diagnóstico Pre-Generación ({preconditions.stats.totalBlocksToSchedule} bloques a asignar)
-                </span>
-              </div>
+        {/* Navegación de los 8 pasos */}
+        <nav className="flex-1 space-y-1 overflow-auto p-3" aria-label="Pasos de configuración">
+          <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Configuración paso a paso
+          </p>
+          {stepMeta.map((step) => {
+            const Icon = step.icon;
+            const isActive = activeStep === step.id;
+            return (
               <button
+                key={step.id}
                 type="button"
-                onClick={() => setPreconditions(null)}
-                className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] cursor-pointer"
+                onClick={() => setActiveStep(step.id)}
+                className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-medium transition-colors ${
+                  isActive
+                    ? "bg-primary text-primary-foreground shadow-xs"
+                    : "text-sidebar-foreground/85 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
               >
-                Cerrar
+                <span
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+                    isActive
+                      ? "bg-primary-foreground/20 text-primary-foreground"
+                      : step.done
+                        ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                        : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {step.done && !isActive ? (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  ) : (
+                    step.num
+                  )}
+                </span>
+                <Icon className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                <span className="flex-1 truncate">{step.label}</span>
+                <span
+                  className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                    isActive
+                      ? "bg-primary-foreground/15 text-primary-foreground"
+                      : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {step.count}
+                </span>
               </button>
+            );
+          })}
+        </nav>
+
+        {/* Acciones secundarias y perfil en la parte inferior */}
+        <div className="shrink-0 space-y-2 border-t p-3">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 w-full justify-start text-xs"
+            onClick={() => setImportOpen(true)}
+          >
+            <FileSpreadsheet className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+            Importar desde Excel
+          </Button>
+
+          <Separator />
+
+          <div className="flex items-center justify-between gap-2 px-1">
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium">
+                {user.firstName} {user.lastName}
+              </p>
+              <p className="truncate text-[10px] text-muted-foreground">
+                {user.email}
+              </p>
             </div>
-            {preconditions.issues.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
-                {preconditions.issues.map((iss, idx) => (
-                  <div
-                    key={idx}
-                    className={`rounded-lg px-2.5 py-1.5 text-xs ${
-                      iss.severity === "ERROR"
-                        ? "bg-red-500/10 text-red-500"
-                        : "bg-amber-500/10 text-amber-500"
-                    }`}
-                  >
-                    <strong>[{iss.code}]</strong> {iss.message}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Navegación principal por pestañas */}
-      <div className="flex flex-wrap gap-2 border-b border-[var(--border-subtle)] pb-3">
-        <Button
-          size="sm"
-          variant={tab === "grid" ? "default" : "ghost"}
-          onClick={() => setTab("grid")}
-        >
-          <CalendarDays className="h-4 w-4" />
-          Grilla Interactiva
-        </Button>
-        <Button
-          size="sm"
-          variant={tab === "setup" ? "default" : "ghost"}
-          onClick={() => setTab("setup")}
-        >
-          <Settings2 className="h-4 w-4" />
-          Configuración Académica
-        </Button>
-        <Button
-          size="sm"
-          variant={tab === "rules_ai" ? "default" : "ghost"}
-          onClick={() => setTab("rules_ai")}
-        >
-          <Sparkles className="h-4 w-4" />
-          Reglas y Asistente IA
-        </Button>
-        <Button
-          size="sm"
-          variant={tab === "operations" ? "default" : "ghost"}
-          onClick={() => setTab("operations")}
-        >
-          <Download className="h-4 w-4" />
-          Reemplazos, PDF y Gestión
-        </Button>
-      </div>
-
-      {/* Contenido de la pestaña activa */}
-      {tab === "grid" && (
-        versionDetail && audit ? (
-          <ScheduleGridView
-            setup={setup}
-            version={versionDetail}
-            audit={audit}
-            onVersionMutated={() => loadVersion(versionDetail.id)}
-          />
-        ) : (
-          <Card>
-            <CardContent className="p-10 text-center space-y-3">
-              <Cpu className="mx-auto h-8 w-8 text-[var(--accent-1)]" />
-              <p className="text-sm font-semibold">Aún no hay una versión de horario generada.</p>
-              <Button onClick={() => void handleGenerate()} disabled={generating}>
-                Generar primer horario
+            <div className="flex shrink-0 items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={toggleTheme}
+                aria-label="Cambiar tema"
+              >
+                {theme === "dark" ? (
+                  <Sun className="h-3.5 w-3.5" />
+                ) : (
+                  <Moon className="h-3.5 w-3.5" />
+                )}
               </Button>
-            </CardContent>
-          </Card>
-        )
-      )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                onClick={handleLogout}
+                aria-label="Cerrar sesión"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </aside>
 
-      {tab === "setup" && (
-        <AcademicSetupTab
-          setup={setup}
-          activeVersion={versionDetail}
-          onRefresh={() => loadAll(activeVersionId)}
-        />
-      )}
+      {/* Contenido principal 100% fluido */}
+      <main className="h-full min-w-0 flex-1 overflow-hidden bg-background">
+        {activeStep === "jornada" && (
+          <StepJornada
+            setup={setup}
+            onRefresh={() => loadAll(undefined, false)}
+            onNextStep={goNextStep}
+          />
+        )}
+        {activeStep === "cursos" && (
+          <StepCursos
+            setup={setup}
+            onRefresh={() => loadAll(undefined, false)}
+            onNextStep={goNextStep}
+          />
+        )}
+        {activeStep === "salas" && (
+          <StepSalas
+            setup={setup}
+            onRefresh={() => loadAll(undefined, false)}
+            onNextStep={goNextStep}
+          />
+        )}
+        {activeStep === "asignaturas" && (
+          <StepAsignaturas
+            setup={setup}
+            onRefresh={() => loadAll(undefined, false)}
+            onNextStep={goNextStep}
+          />
+        )}
+        {activeStep === "docentes" && (
+          <StepDocentes
+            setup={setup}
+            onRefresh={() => loadAll(undefined, false)}
+            onNextStep={goNextStep}
+          />
+        )}
+        {activeStep === "plan" && (
+          <StepPlanEstudios
+            setup={setup}
+            onRefresh={() => loadAll(undefined, false)}
+            onNextStep={goNextStep}
+          />
+        )}
+        {activeStep === "reglas" && (
+          <StepReglas
+            setup={setup}
+            onRefresh={() => loadAll(undefined, false)}
+            onNextStep={goNextStep}
+          />
+        )}
+        {activeStep === "resultado" && (
+          <StepResultado
+            setup={setup}
+            activeVersionId={activeVersionId}
+            versionDetail={versionDetail}
+            audit={audit}
+            preconditions={preconditions}
+            generating={generating}
+            onSelectVersion={handleSelectVersion}
+            onValidate={handleValidate}
+            onGenerate={handleGenerate}
+            onVersionMutated={() => loadAll(activeVersionId, false)}
+          />
+        )}
+      </main>
 
-      {tab === "rules_ai" && (
-        <RulesAndAITab
-          setup={setup}
-          activeVersion={versionDetail}
-          onRefresh={() => loadAll(activeVersionId)}
-        />
-      )}
-
-      {tab === "operations" && (
-        <OperationsAndExportTab
-          userRole={user.role}
-          setup={setup}
-          activeVersion={versionDetail}
-          schools={schools}
-          onSchoolChanged={() => loadAll()}
-        />
-      )}
+      {/* Dialog Importación Excel */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <FileSpreadsheet className="h-4 w-4 text-primary" />
+              Importar datos desde Excel / CSV
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-muted-foreground">
+              Sube un libro Excel con hojas <strong>Profesores</strong>,{" "}
+              <strong>Salas</strong>, <strong>Asignaturas</strong> y/o{" "}
+              <strong>Cursos</strong> para cargar registros masivamente.
+            </p>
+            <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/20 p-6 text-center transition-colors hover:bg-muted/40">
+              <Upload className="h-6 w-6 text-muted-foreground" />
+              <span className="text-xs font-medium">
+                {importFile ? importFile.name : "Haz clic para seleccionar archivo (.xlsx / .csv)"}
+              </span>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                className="hidden"
+                onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleExcelImport}
+              disabled={!importFile || importing}
+            >
+              {importing && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
+              Importar ahora
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

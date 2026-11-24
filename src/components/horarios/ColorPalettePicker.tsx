@@ -5,34 +5,38 @@ import { Pipette } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { TEACHER_COLOR_FAMILIES } from "@/lib/scheduling/constants";
 
-interface TeacherColorPickerProps {
+interface ColorPalettePickerProps {
+  label?: string;
   value: string;
   onChange: (hex: string) => void;
 }
 
 const TINT_LEVELS = [0, 1, 2, 3, 4] as const;
 
-export function TeacherColorPicker({ value, onChange }: TeacherColorPickerProps) {
-  const normalizedValue = value.trim().toUpperCase();
+export function ColorPalettePicker({
+  label = "Color en grilla",
+  value,
+  onChange,
+}: ColorPalettePickerProps) {
+  const normalizedValue = (value || "#2563EB").trim().toUpperCase();
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <Label>Color en grilla</Label>
+        <Label>{label}</Label>
         <div className="flex items-center gap-2">
           <span
-            className="inline-block h-4 w-4 rounded-full border border-[var(--border-card)] shrink-0"
-            style={{ backgroundColor: value }}
+            className="inline-block h-4 w-4 shrink-0 rounded-full border"
+            style={{ backgroundColor: normalizedValue }}
             aria-hidden="true"
           />
-          <span className="font-mono text-[11px] text-[var(--text-secondary)]">
+          <span className="font-mono text-xs text-muted-foreground">
             {normalizedValue}
           </span>
         </div>
       </div>
 
-      <div className="rounded-xl border border-[var(--border-card)] bg-[var(--bg-surface)] p-2.5 space-y-2">
-        {/* Matriz 12 familias × 5 intensidades (60 colores) */}
+      <div className="space-y-2 rounded-lg border bg-card p-2.5">
         <div
           className="grid grid-cols-12 gap-1"
           role="radiogroup"
@@ -52,10 +56,10 @@ export function TeacherColorPicker({ value, onChange }: TeacherColorPickerProps)
                   title={`${family.name} (${hex})`}
                   onClick={() => onChange(hex)}
                   style={{ backgroundColor: hex }}
-                  className={`h-5 w-full rounded-[4px] border transition-transform cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-1)] ${
+                  className={`h-5 w-full cursor-pointer rounded-[4px] border transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     isSelected
-                      ? "border-white ring-2 ring-[var(--text-primary)] ring-offset-1 ring-offset-[var(--bg-surface)] scale-110 z-10"
-                      : "border-black/15 hover:scale-110 hover:z-10"
+                      ? "z-10 scale-110 border-white ring-2 ring-foreground ring-offset-1 ring-offset-background"
+                      : "border-black/15 hover:z-10 hover:scale-110"
                   }`}
                 />
               );
@@ -63,24 +67,23 @@ export function TeacherColorPicker({ value, onChange }: TeacherColorPickerProps)
           )}
         </div>
 
-        {/* Selector personalizado nativo */}
-        <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-[var(--border-subtle)]">
-          <span className="text-[11px] text-[var(--text-muted)] flex items-center gap-1.5">
-            <Pipette className="h-3 w-3" />
-            Color personalizado
+        <div className="flex items-center justify-between gap-2 border-t pt-2">
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Pipette className="h-3.5 w-3.5" />
+            Personalizado
           </span>
-          <label className="relative inline-flex items-center gap-2 rounded-lg border border-[var(--border-card)] bg-[var(--bg-card)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] cursor-pointer transition-colors">
+          <label className="relative inline-flex cursor-pointer items-center gap-2 rounded-md border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted">
             <span
               className="h-3.5 w-3.5 rounded-sm border border-black/20"
-              style={{ backgroundColor: value }}
+              style={{ backgroundColor: normalizedValue }}
             />
-            <span>Selector</span>
+            <span>Elegir</span>
             <input
               type="color"
-              value={/^#[0-9A-F]{6}$/i.test(value) ? value : "#0353A4"}
+              value={/^#[0-9A-F]{6}$/i.test(normalizedValue) ? normalizedValue : "#2563EB"}
               onChange={(e) => onChange(e.target.value.toUpperCase())}
               aria-label="Selector de color personalizado"
-              className="absolute inset-0 h-full w-full opacity-0 cursor-pointer"
+              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             />
           </label>
         </div>

@@ -1,11 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import {
+  calculateEffectiveCourseBlocks,
   calculateLegalMaxTeachingBlocks,
   extractLey20903Policy,
   formatChronologicalMinutes,
   LEY_20903_RATIO_LABELS,
   resolveBlockDurationMinutes,
   resolveTeacherLey20903Ratio,
+  ROOM_TYPE_LABELS,
   type RoomAssignmentMode,
 } from "@/lib/scheduling/constants";
 import { Prisma, type RoomType, type SchedulingRule } from "@prisma/client";
@@ -386,7 +388,7 @@ function evaluateScheduleState(
             id: `roomtype-${entry.id}`,
             severity: "SOFT",
             ruleType: "SHARED_ROOM_CAPACITY",
-            message: `${entry.subjectName} (${entry.courseName}) requiere recinto tipo ${entry.requiresRoomType}, pero fue ubicada en "${room.name}" por disponibilidad.`,
+            message: `${entry.subjectName} (${entry.courseName}) requiere recinto tipo ${ROOM_TYPE_LABELS[entry.requiresRoomType]}, pero fue ubicada en "${room.name}" por disponibilidad.`,
             penalty: 40,
             dayOfWeek: slot.dayOfWeek,
             blockNumber: slot.blockNumber,
@@ -1660,7 +1662,7 @@ export const TimetableSolverService = {
 
     for (const course of courses) {
       const availableSlots = classSlotsByBell.get(course.bellScheduleId) ?? 0;
-      const courseTotal = course.courseSubjects.reduce((s, cs) => s + cs.weeklyBlocks, 0);
+      const courseTotal = calculateEffectiveCourseBlocks(course.courseSubjects);
       totalBlocksToSchedule += courseTotal;
 
       if (courseTotal > availableSlots) {
@@ -1769,14 +1771,14 @@ export const TimetableSolverService = {
           message:
             roomType === "CLASSROOM"
               ? `Se requieren ${demand} bloques en "Otra sala de clases", pero todas las salas de clases están asignadas como sala base de algún curso.`
-              : `Se requieren ${demand} bloques en sala tipo ${roomType}, pero no hay ningún recinto de este tipo registrado.`,
+              : `Se requieren ${demand} bloques en sala tipo "${ROOM_TYPE_LABELS[roomType]}", pero no hay ningún recinto de este tipo registrado.`,
         });
       } else if (demand > capacity) {
         issues.push({
           severity: "WARNING",
           code: "SPECIAL_ROOM_OVERFLOW",
           entityType: "ROOM",
-          message: `Demanda de ${demand} bloques para ${roomType} supera la capacidad semanal disponible (${capacity}).`,
+          message: `Demanda de ${demand} bloques para "${ROOM_TYPE_LABELS[roomType]}" supera la capacidad semanal disponible (${capacity}).`,
         });
       }
     }
