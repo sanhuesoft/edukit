@@ -147,3 +147,10 @@
   background-size: 14px 14px;
   mask-image: radial-gradient(ellipse at center, black 0%, transparent 72%);
 }
+.tactile-light {
+  --button-edge: #c3d2ff;
+}
+.dark .tactile-light,
+[data-theme="dark"] .tactile-light {
+  --button-edge: #0e1733;
+}
