@@ -47,7 +47,7 @@ function buildFallbackRecommendation(
     );
     return {
       reply:
-        "Para restringir días o bloques en los que un docente no trabaja, debes usar la regla **Bloques no disponibles del profesor** (`TEACHER_UNAVAILABILITY`) con peso **HARD** (obligatoria). Selecciona al docente y marca los días o bloques específicos en la matriz.",
+        "Para restringir días o bloques en los que un docente no trabaja, debes usar la regla **Bloques no disponibles del profesor** (`TEACHER_UNAVAILABILITY`) en modo **Estricta** (obligatoria). Selecciona al docente y marca los días o bloques específicos en la matriz.",
       recommendation: {
         ruleType: "TEACHER_UNAVAILABILITY",
         weight: "HARD",
@@ -67,7 +67,7 @@ function buildFallbackRecommendation(
     const period = lower.includes("tarde") ? "AFTERNOON" : "MORNING";
     return {
       reply:
-        `Para priorizar una asignatura en la ${period === "MORNING" ? "mañana" : "tarde"}, utiliza **Franjas horarias prioritarias por asignatura** (\`SUBJECT_PREFERRED_TIME_RANGE\`) con peso **SOFT** y período \`${period}\`.`,
+        `Para priorizar una asignatura en la ${period === "MORNING" ? "mañana" : "tarde"}, utiliza **Franjas horarias prioritarias por asignatura** (\`SUBJECT_PREFERRED_TIME_RANGE\`) en modo **Flexible** y período \`${period}\`.`,
       recommendation: {
         ruleType: "SUBJECT_PREFERRED_TIME_RANGE",
         weight: "SOFT",
@@ -84,7 +84,7 @@ function buildFallbackRecommendation(
     const matchedSubject = subjects.find((s) => lower.includes(s.name.toLowerCase()));
     return {
       reply:
-        "Para fijar una asignatura en un día y bloque exacto (por ejemplo Consejo de Curso), usa **Bloques fijos / anclados** (`FIXED_SUBJECT_SLOT`) con peso **HARD**, indicando el día de la semana (1=Lunes a 5=Viernes) y el número de bloque.",
+        "Para fijar una asignatura en un día y bloque exacto (por ejemplo Consejo de Curso), usa **Bloques fijos / anclados** (`FIXED_SUBJECT_SLOT`) en modo **Estricta**, indicando el día de la semana (1=Lunes a 5=Viernes) y el número de bloque.",
       recommendation: {
         ruleType: "FIXED_SUBJECT_SLOT",
         weight: "HARD",
@@ -100,7 +100,7 @@ function buildFallbackRecommendation(
   if (lower.includes("almuerzo") || lower.includes("colación")) {
     return {
       reply:
-        "Si necesitas asegurar un bloque libre de almuerzo para docentes con turnos escalonados, usa **Ventana de colación / almuerzo garantizada** (`TEACHER_GUARANTEED_LUNCH_BREAK`) en modo **HARD**. Si lo que quieres es evitar repetir la misma asignatura antes y después de almuerzo, usa `NO_SAME_SUBJECT_AROUND_LUNCH`.",
+        "Si necesitas asegurar un bloque libre de almuerzo para docentes con turnos escalonados, usa **Ventana de colación / almuerzo garantizada** (`TEACHER_GUARANTEED_LUNCH_BREAK`) en modo **Estricta**. Si lo que quieres es evitar repetir la misma asignatura antes y después de almuerzo, usa `NO_SAME_SUBJECT_AROUND_LUNCH`.",
       recommendation: {
         ruleType: "TEACHER_GUARANTEED_LUNCH_BREAK",
         weight: "HARD",
@@ -220,7 +220,7 @@ export async function POST(request: Request) {
       "",
       "INSTRUCCIONES DE RESPUESTA (DEVUELVE EXCLUSIVAMENTE JSON VÁLIDO):",
       "Debes responder un objeto JSON con exactamente dos claves:",
-      '1. "reply": string en español de Chile, claro, directo y práctico (máx 4-6 líneas). Explica qué regla usar, por qué conviene HARD o SOFT, y qué valores poner en los parámetros.',
+      '1. "reply": string en español de Chile, claro, directo y práctico (máx 4-6 líneas). Explica qué regla usar, por qué conviene que sea Estricta (obligatoria) o Flexible (prioritaria), y qué valores poner en los parámetros.',
       '2. "recommendation": objeto o null. Si identificaste una regla concreta para configurar, entrega:',
       '   { "ruleType": "<uno de los enum válidos>", "weight": "HARD" | "SOFT", "penaltyScore": number (100 si HARD, 10-50 si SOFT), "targetEntityType": "GLOBAL" | "TEACHER" | "SUBJECT" | "COURSE" | "ROOM", "targetEntityId": "<id exacto del contexto o null>", "parameters": { ...parámetros válidos para esa regla... }, "summary": "<resumen corto en 1 línea>" }',
       "Parámetros esperados por regla:",

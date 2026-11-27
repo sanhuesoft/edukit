@@ -26,6 +26,7 @@ import {
   DAYS_OF_WEEK,
   RULE_EXAMPLES,
   RULE_TYPE_META,
+  RULE_WEIGHT_META,
 } from "@/lib/scheduling/constants";
 import type { RuleAssistantRecommendation } from "@/app/api/horarios/rules/assistant/route";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -179,6 +186,34 @@ function renderFormattedReply(text: string): React.ReactNode {
     }
     return <React.Fragment key={idx}>{part}</React.Fragment>;
   });
+}
+
+function RuleWeightBadge({
+  weight,
+  penaltyScore,
+  className,
+}: {
+  weight: RuleWeight;
+  penaltyScore?: number;
+  className?: string;
+}) {
+  const meta = RULE_WEIGHT_META[weight];
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge
+          variant={weight === "HARD" ? "destructive" : "outline"}
+          className={`cursor-help ${className ?? ""}`}
+        >
+          {meta.label}
+          {weight === "SOFT" && penaltyScore !== undefined ? ` (${penaltyScore})` : ""}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
+        {meta.description}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
@@ -442,7 +477,8 @@ export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <TooltipProvider delayDuration={150}>
+      <div className="flex h-full flex-col">
       <Tabs value={subTab} onValueChange={setSubTab} className="flex h-full flex-col">
         {/* Header del paso */}
         <div className="flex items-center justify-between border-b bg-background px-6 py-3">
@@ -450,7 +486,7 @@ export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
             <div className="flex items-center gap-2">
               <h1 className="text-base font-semibold tracking-tight">7. Reglas</h1>
               <Badge variant="secondary">{visibleActiveRules.length} activas</Badge>
-              <HelpTip text="Configura restricciones obligatorias (HARD) o preferencias (SOFT). Usa el asistente de IA arriba si tienes dudas sobre qué regla aplicar." />
+              <HelpTip text="Configura reglas estrictas (obligatorias) o flexibles (prioritarias). Usa el asistente de IA arriba si tienes dudas sobre qué regla aplicar." />
             </div>
             <TabsList className="h-8">
               <TabsTrigger value="catalogo" className="gap-1.5 text-xs">
@@ -549,8 +585,8 @@ export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
                                     {RULE_TYPE_META[msg.recommendation.ruleType]?.label}
                                   </p>
                                   <p className="truncate text-[11px] text-muted-foreground">
-                                    {msg.recommendation.summary} · Peso:{" "}
-                                    {msg.recommendation.weight}
+                                    {msg.recommendation.summary} · Prioridad:{" "}
+                                    {RULE_WEIGHT_META[msg.recommendation.weight].label}
                                   </p>
                                 </div>
                                 <Button
@@ -659,12 +695,10 @@ export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
                               {activeCount} activa{activeCount > 1 ? "s" : ""}
                             </Badge>
                           )}
-                          <Badge
-                            variant={meta.defaultWeight === "HARD" ? "destructive" : "outline"}
+                          <RuleWeightBadge
+                            weight={meta.defaultWeight}
                             className="text-[10px]"
-                          >
-                            {meta.defaultWeight}
-                          </Badge>
+                          />
                         </div>
                       </div>
                       <CardTitle className="text-sm font-semibold leading-snug">
@@ -747,13 +781,11 @@ export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge
-                            variant={rule.weight === "HARD" ? "destructive" : "outline"}
+                          <RuleWeightBadge
+                            weight={rule.weight}
+                            penaltyScore={rule.weight === "SOFT" ? rule.penaltyScore : undefined}
                             className="text-[11px]"
-                          >
-                            {rule.weight}
-                            {rule.weight === "SOFT" ? ` (${rule.penaltyScore})` : ""}
-                          </Badge>
+                          />
                         </TableCell>
                         <TableCell className="text-xs">{resolveEntityName(rule)}</TableCell>
                         <TableCell className="max-w-xs truncate font-mono text-[11px] text-muted-foreground">
@@ -807,7 +839,7 @@ export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
               <div className="space-y-1.5">
                 <Label className="flex items-center gap-1 text-xs">
                   Prioridad
-                  <HelpTip text="HARD es obligatoria (no se puede violar). SOFT descuenta puntaje si no se cumple." />
+                  <HelpTip text="Estricta es obligatoria (no se puede incumplir). Flexible es prioritaria y descuenta puntaje si hay conflicto." />
                 </Label>
                 <Select
                   value={weight}
@@ -821,8 +853,8 @@ export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="HARD">HARD (Obligatoria)</SelectItem>
-                    <SelectItem value="SOFT">SOFT (Preferencia)</SelectItem>
+                    <SelectItem value="HARD">Estricta (Obligatoria)</SelectItem>
+                    <SelectItem value="SOFT">Flexible (Prioritaria)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1507,6 +1539,7 @@ export function StepReglas({ setup, onRefresh, onNextStep }: StepReglasProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </TooltipProvider>
   );
 }

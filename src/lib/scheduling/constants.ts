@@ -50,6 +50,22 @@ export const ACTIVITY_TYPE_LABELS: Record<NonTeachingActivityType, string> = {
   PLANNING: "Planificación / No Lectivo",
 };
 
+export const RULE_WEIGHT_META: Record<
+  "HARD" | "SOFT",
+  { label: string; description: string }
+> = {
+  HARD: {
+    label: "Estricta",
+    description:
+      "Regla obligatoria: el generador la cumplirá siempre; si es imposible, no generará un horario inválido.",
+  },
+  SOFT: {
+    label: "Flexible",
+    description:
+      "Regla prioritaria: el generador intentará cumplirla, y si hay conflicto descontará puntaje según su penalización.",
+  },
+};
+
 export const RULE_TYPE_META: Record<
   SchedulingRuleType,
   {
@@ -266,7 +282,7 @@ export const RULE_TYPE_META: Record<
   FIXED_SYNC_GROUP_SLOT: {
     label: "Bloques fijos / anclados por grupo sincronizado (Hard pinning)",
     category: "ESPECIAL",
-    description: "Fija un grupo sincronizado (ej. Taller JEC) en un día y bloque(s) específico(s) de la semana de forma obligatoria (HARD).",
+    description: "Fija un grupo sincronizado (ej. Taller JEC) en un día y bloque(s) específico(s) de la semana de forma obligatoria (Estricta).",
     defaultWeight: "HARD",
     defaultPenalty: 100,
   },
