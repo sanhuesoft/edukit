@@ -5,9 +5,20 @@ import { prisma } from "@/lib/prisma";
 import { SESSION_COOKIE_NAME, signSessionToken } from "@/lib/auth";
 import { BASE_PATH, withBasePath } from "@/lib/basePath";
 import { getProfekitSsoConfig, PROFEKIT_SSO_STATE_COOKIE } from "@/lib/profekitSso";
+import {
+  PROFEKIT_ONBOARDING_COOKIE,
+  PROFEKIT_ONBOARDING_MAX_AGE,
+  signOnboardingToken,
+} from "@/lib/profekitOnboarding";
 
 type ProfekitTokenPayload = {
-  user?: { id?: string; email?: string; name?: string; role?: string };
+  user?: {
+    id?: string;
+    email?: string;
+    name?: string;
+    role?: string;
+    school?: { code?: string | null; name?: string | null } | null;
+  };
   subscription?: { hasHorariosAccess?: boolean };
 };
 
@@ -21,9 +32,8 @@ function isSameState(saved: string, received: string): boolean {
 /**
  * Callback del SSO de ProfeKit.
  *
- * EduKit no crea cuentas a partir de ProfeKit: cada usuario pertenece a un
- * establecimiento (o es Super Administrador), así que el SSO solo inicia sesión
- * en una cuenta EduKit existente y activa con el mismo correo.
+ * Con una cuenta EduKit activa del mismo correo, inicia sesión. Sin cuenta, lleva a /registro
+ * para que elija su establecimiento: cada cuenta de EduKit pertenece a uno.
  */
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
@@ -94,7 +104,25 @@ export async function GET(request: Request) {
       },
     });
 
-    if (!user) return loginErrorRedirect("no_account");
+    if (!user) {
+      const response = NextResponse.redirect(new URL(withBasePath("/registro"), appOrigin));
+      response.cookies.set(
+        PROFEKIT_ONBOARDING_COOKIE,
+        signOnboardingToken({
+          email,
+          name: payload.user?.name?.trim() || "",
+          schoolCode: payload.user?.school?.code?.trim() || null,
+        }),
+        {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          path: BASE_PATH,
+          maxAge: PROFEKIT_ONBOARDING_MAX_AGE,
+        }
+      );
+      return response;
+    }
     if (!user.isActive) return loginErrorRedirect("account_inactive");
     if (user.role === "SCHOOL_ADMIN" && (!user.schoolId || !user.school?.isActive)) {
       return loginErrorRedirect("school_inactive");

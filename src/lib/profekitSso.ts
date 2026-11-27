@@ -24,8 +24,12 @@ function resolveRequestOrigin(request: Request): string {
   return new URL(request.url).origin;
 }
 
+export function getProfekitBaseUrl(): string {
+  return normalizeBaseUrl(process.env.PROFEKIT_SSO_URL || "https://www.profekit.cl");
+}
+
 export function getProfekitSsoConfig(request: Request) {
-  const ssoBaseUrl = normalizeBaseUrl(process.env.PROFEKIT_SSO_URL || "https://www.profekit.cl");
+  const ssoBaseUrl = getProfekitBaseUrl();
   const clientId = process.env.PROFEKIT_CLIENT_ID?.trim() || "horarios_app";
   const clientSecret = process.env.PROFEKIT_CLIENT_SECRET?.trim() || "";
 
@@ -61,6 +65,8 @@ export function getProfekitSsoErrorMessage(errorCode: string | null | undefined)
       return "Tu cuenta ProfeKit no está asociada a ninguna cuenta de ProfeKit Horarios. Pide acceso a tu establecimiento o escríbenos a contacto@profekit.cl.";
     case "addon_required":
       return "Tu cuenta ProfeKit no tiene acceso a ProfeKit Horarios. Pide acceso a tu establecimiento o escríbenos a contacto@profekit.cl.";
+    case "onboarding_expired":
+      return "El registro con tu cuenta ProfeKit caducó. Vuelve a ingresar con ProfeKit para continuar.";
     case "account_inactive":
       return "Tu cuenta de ProfeKit Horarios está inactiva.";
     case "school_inactive":
