@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from "react";
 import { withBasePath } from "@/lib/basePath";
-import { Copy, Layers, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Copy, HeartHandshake, Layers, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { calculateEffectiveCourseBlocks, LEVEL_LABELS } from "@/lib/scheduling/constants";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +67,20 @@ export function StepPlanEstudios({
   const [isSynced, setIsSynced] = useState(false);
   const [syncGroupCode, setSyncGroupCode] = useState("");
   const [propagateSyncRename, setPropagateSyncRename] = useState(true);
+
+  // Apoyo PIE (educadora diferencial que acompaña algunos bloques)
+  const [pieEnabled, setPieEnabled] = useState(false);
+  const [pieTeacherId, setPieTeacherId] = useState("__NONE__");
+  const [pieBlocks, setPieBlocks] = useState(2);
+  const [pieResourceBlocks, setPieResourceBlocks] = useState(0);
+  const [pieRoomId, setPieRoomId] = useState("__ANY__");
+  // Otros docentes de la asignatura (codocentes) que el diálogo no edita pero debe conservar
+  const [extraTeachers, setExtraTeachers] = useState<CourseSubjectDTO["teachers"]>([]);
+
+  const pieRooms = useMemo(
+    () => setup.rooms.filter((r) => r.roomType === "PIE_ROOM"),
+    [setup.rooms]
+  );
 
   // Dialog copiar plan
   const [copyOpen, setCopyOpen] = useState(false);
@@ -133,13 +147,27 @@ export function StepPlanEstudios({
     setRequiresConsecutive(false);
     setIsSynced(false);
     setSyncGroupCode("");
+    setPieEnabled(false);
+    setPieTeacherId("__NONE__");
+    setPieBlocks(2);
+    setPieResourceBlocks(0);
+    setPieRoomId("__ANY__");
+    setExtraTeachers([]);
     setDialogOpen(true);
   };
 
   const openEdit = (cs: CourseSubjectDTO) => {
     setEditing(cs);
     setSubjectId(cs.subjectId);
-    setTeacherId(cs.teachers[0]?.teacherId ?? "__NONE__");
+    const lead = cs.teachers.find((t) => t.role === "LEAD") ?? null;
+    const pie = cs.teachers.find((t) => t.role === "PIE_SUPPORT") ?? null;
+    setTeacherId(lead?.teacherId ?? "__NONE__");
+    setPieEnabled(Boolean(pie));
+    setPieTeacherId(pie?.teacherId ?? "__NONE__");
+    setPieBlocks(pie ? (pie.assignedBlocks ?? cs.weeklyBlocks) : Math.min(2, cs.weeklyBlocks));
+    setPieResourceBlocks(pie?.resourceRoomBlocks ?? 0);
+    setPieRoomId(pie?.resourceRoomId ?? "__ANY__");
+    setExtraTeachers(cs.teachers.filter((t) => t !== lead && t !== pie));
     setShowAllTeachers(false);
     setWeeklyBlocks(cs.weeklyBlocks);
     setRequiresConsecutive(cs.requiresConsecutiveBlocks);
@@ -176,10 +204,40 @@ export function StepPlanEstudios({
     setBusy(true);
     try {
       const cleanSync = isSynced && syncGroupCode.trim() ? syncGroupCode.trim() : null;
-      const teachersPayload =
-        teacherId && teacherId !== "__NONE__"
-          ? [{ teacherId, role: "LEAD" as const }]
-          : [];
+      const blocks = Number(weeklyBlocks) || 2;
+      const teachersPayload: Array<{
+        teacherId: string;
+        role: "LEAD" | "CO_TEACHER" | "PIE_SUPPORT";
+        assignedBlocks: number | null;
+        resourceRoomBlocks?: number;
+        resourceRoomId?: string | null;
+      }> = [];
+      if (teacherId && teacherId !== "__NONE__") {
+        teachersPayload.push({ teacherId, role: "LEAD", assignedBlocks: null });
+      }
+      const usedTeacherIds = new Set(teachersPayload.map((t) => t.teacherId));
+      if (pieEnabled && pieTeacherId !== "__NONE__" && !usedTeacherIds.has(pieTeacherId)) {
+        const supportBlocks = Math.min(blocks, Math.max(1, Number(pieBlocks) || 1));
+        teachersPayload.push({
+          teacherId: pieTeacherId,
+          role: "PIE_SUPPORT",
+          assignedBlocks: supportBlocks >= blocks ? null : supportBlocks,
+          resourceRoomBlocks: Math.min(supportBlocks, Math.max(0, Number(pieResourceBlocks) || 0)),
+          resourceRoomId: pieRoomId === "__ANY__" ? null : pieRoomId,
+        });
+        usedTeacherIds.add(pieTeacherId);
+      }
+      for (const t of extraTeachers) {
+        if (usedTeacherIds.has(t.teacherId)) continue;
+        teachersPayload.push({
+          teacherId: t.teacherId,
+          role: t.role,
+          assignedBlocks: t.assignedBlocks,
+          resourceRoomBlocks: t.resourceRoomBlocks,
+          resourceRoomId: t.resourceRoomId,
+        });
+        usedTeacherIds.add(t.teacherId);
+      }
 
       const res = await fetch(withBasePath("/api/horarios/setup/entities"), {
         method: editing ? "PATCH" : "POST",
@@ -468,7 +526,13 @@ export function StepPlanEstudios({
                         </TableRow>
                       ) : (
                         selectedCourse.courseSubjects.map((cs) => {
-                          const lead = cs.teachers[0]?.teacher;
+                          const lead = (
+                            cs.teachers.find((t) => t.role === "LEAD") ?? cs.teachers[0]
+                          )?.teacher;
+                          const pie = cs.teachers.find((t) => t.role === "PIE_SUPPORT");
+                          const others = cs.teachers.filter(
+                            (t) => t.teacher !== lead && t !== pie
+                          ).length;
                           return (
                             <TableRow key={cs.id}>
                               <TableCell>
@@ -495,9 +559,22 @@ export function StepPlanEstudios({
                                     <span className="text-sm">
                                       {lead.firstName} {lead.lastName}
                                     </span>
-                                    {cs.teachers.length > 1 && (
+                                    {pie && pie.teacher !== lead && (
+                                      <Badge
+                                        variant="outline"
+                                        className="gap-1 text-[10px]"
+                                        title={`Apoyo PIE: ${pie.teacher.firstName} ${pie.teacher.lastName}`}
+                                      >
+                                        <HeartHandshake className="h-3 w-3" />
+                                        PIE {pie.assignedBlocks ?? cs.weeklyBlocks}/{cs.weeklyBlocks}
+                                        {pie.resourceRoomBlocks > 0
+                                          ? ` · ${pie.resourceRoomBlocks} en A. Recursos`
+                                          : ""}
+                                      </Badge>
+                                    )}
+                                    {others > 0 && (
                                       <Badge variant="outline" className="text-[10px]">
-                                        +{cs.teachers.length - 1}
+                                        +{others}
                                       </Badge>
                                     )}
                                   </div>
@@ -568,7 +645,7 @@ export function StepPlanEstudios({
 
       {/* Dialog Agregar/Editar Carga Curricular */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
               {editing ? "Editar asignación" : `Agregar asignatura a ${selectedCourse?.name}`}
@@ -647,6 +724,101 @@ export function StepPlanEstudios({
                   onCheckedChange={setRequiresConsecutive}
                 />
               </div>
+            </div>
+
+            <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="cs-pie" className="text-xs font-medium">
+                    Apoyo PIE
+                  </Label>
+                  <HelpTip text="Educador(a) diferencial que acompaña algunos bloques de esta asignatura. El generador elige en qué bloques va y, si corresponde, le asigna el Aula de Recursos mientras el titular sigue en la sala del curso." />
+                </div>
+                <Switch id="cs-pie" checked={pieEnabled} onCheckedChange={setPieEnabled} />
+              </div>
+
+              {pieEnabled && (
+                <div className="space-y-3 pt-1">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Docente PIE</Label>
+                    <Select value={pieTeacherId} onValueChange={setPieTeacherId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona docente" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__NONE__">Sin asignar todavía</SelectItem>
+                        {setup.teachers
+                          .filter((t) => t.id !== teacherId)
+                          .map((t) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              {t.firstName} {t.lastName}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="cs-pie-blocks" className="text-xs">
+                        Bloques con apoyo
+                      </Label>
+                      <Input
+                        id="cs-pie-blocks"
+                        type="number"
+                        min={1}
+                        max={weeklyBlocks}
+                        value={pieBlocks}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          setPieBlocks(v);
+                          if (pieResourceBlocks > v) setPieResourceBlocks(Math.max(0, v));
+                        }}
+                      />
+                      <p className="text-[11px] text-muted-foreground">de {weeklyBlocks} semanales</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="cs-pie-resource" className="text-xs">
+                        En Aula de Recursos
+                      </Label>
+                      <Input
+                        id="cs-pie-resource"
+                        type="number"
+                        min={0}
+                        max={Math.min(pieBlocks, weeklyBlocks)}
+                        value={pieResourceBlocks}
+                        onChange={(e) => setPieResourceBlocks(Number(e.target.value))}
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        el resto, en aula regular
+                      </p>
+                    </div>
+                  </div>
+                  {pieResourceBlocks > 0 &&
+                    (pieRooms.length === 0 ? (
+                      <p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+                        No hay salas de tipo &quot;Sala de Apoyo / PIE&quot;. Créala en el paso Salas
+                        para que el generador pueda asignar el Aula de Recursos.
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Aula de Recursos</Label>
+                        <Select value={pieRoomId} onValueChange={setPieRoomId}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__ANY__">Cualquier sala PIE disponible</SelectItem>
+                            {pieRooms.map((r) => (
+                              <SelectItem key={r.id} value={r.id}>
+                                {r.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                </div>
+              )}
             </div>
 
             <div className="space-y-2 rounded-lg border bg-muted/20 p-3">

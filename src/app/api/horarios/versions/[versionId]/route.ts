@@ -27,6 +27,7 @@ export async function GET(
           },
           timeSlot: true,
           room: true,
+          teachers: { select: { id: true, teacherId: true, roomId: true } },
         },
       },
       nonTeachingActivities: {

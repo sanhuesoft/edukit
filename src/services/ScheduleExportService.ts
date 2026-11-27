@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import JSZip from "jszip";
 import { prisma } from "@/lib/prisma";
+import { resolveEntryParticipants } from "@/lib/scheduling/entryParticipants";
 import {
   DAYS_OF_WEEK,
   ACTIVITY_TYPE_LABELS,
@@ -246,6 +247,7 @@ export const ScheduleExportService = {
               },
               timeSlot: true,
               room: true,
+              teachers: { include: { teacher: true, room: true } },
             },
           },
         },
@@ -276,9 +278,19 @@ export const ScheduleExportService = {
               e.timeSlot.blockNumber === refSlot.blockNumber
           );
           if (match) {
-            const teacherNames = match.courseSubject.teachers
-              .map((t) => `${t.teacher.firstName[0]}. ${t.teacher.lastName}`)
-              .join(" / ");
+            // Docentes de este bloque; el apoyo PIE en otra sala se indica entre paréntesis
+            const teacherNames =
+              match.teachers.length > 0
+                ? match.teachers
+                    .map(
+                      (t) =>
+                        `${t.teacher.firstName[0]}. ${t.teacher.lastName}` +
+                        (t.room && t.roomId !== match.roomId ? ` (${t.room.name})` : "")
+                    )
+                    .join(" / ")
+                : match.courseSubject.teachers
+                    .map((t) => `${t.teacher.firstName[0]}. ${t.teacher.lastName}`)
+                    .join(" / ");
             cells[d.value] = {
               primary: match.courseSubject.subject.name,
               secondary: `${teacherNames} - ${match.room.name}`,
@@ -325,10 +337,11 @@ export const ScheduleExportService = {
             },
             include: {
               courseSubject: {
-                include: { course: true, subject: true },
+                include: { course: true, subject: true, teachers: { select: { teacherId: true } } },
               },
               timeSlot: true,
               room: true,
+              teachers: { include: { room: true } },
             },
           },
           nonTeachingActivities: {
@@ -345,6 +358,15 @@ export const ScheduleExportService = {
 
     if (!version || !teacher) throw new Error("Versión o docente no encontrado.");
 
+    // Solo los bloques en que este docente participa (el apoyo PIE no acompaña todos los bloques),
+    // con la sala donde está él/ella (ej. Aula de Recursos).
+    const teacherEntries = version.entries
+      .filter((e) => resolveEntryParticipants(e).some((p) => p.teacherId === teacherId))
+      .map((e) => {
+        const own = e.teachers.find((t) => t.teacherId === teacherId);
+        return { ...e, teacherRoomName: own?.room?.name ?? e.room.name };
+      });
+
     const [firstBell, schoolRules] = await Promise.all([
       prisma.bellSchedule.findFirst({
         where: { schoolId: version.schoolId },
@@ -359,8 +381,8 @@ export const ScheduleExportService = {
       leyPolicy
     );
     const teachesBasic1to4 =
-      version.entries.some((e) => e.courseSubject.course.levelCode === "BASIC_1_4") ||
-      (version.entries.length === 0 &&
+      teacherEntries.some((e) => e.courseSubject.course.levelCode === "BASIC_1_4") ||
+      (teacherEntries.length === 0 &&
         teacher.qualifiedLevels.some((ql) => ql.levelCode === "BASIC_1_4"));
     const ratio = resolveTeacherLey20903Ratio(teacher.ley20903Ratio, teachesBasic1to4, leyPolicy);
     const breakdown = calculateLey20903Breakdown({
@@ -369,7 +391,7 @@ export const ScheduleExportService = {
       blockDurationMinutes,
       includeBreaksInTeaching: leyPolicy.includeBreaksInTeaching,
       breakMinutesPerBlock: leyPolicy.breakMinutesPerBlock,
-      assignedTeachingBlocks: version.entries.length,
+      assignedTeachingBlocks: teacherEntries.length,
       scheduledNonTeachingBlocks: version.nonTeachingActivities.length,
     });
 
@@ -379,7 +401,7 @@ export const ScheduleExportService = {
       const cells: Record<number, GridCell | null> = {};
       if (!isBreak) {
         for (const d of DAYS_OF_WEEK) {
-          const entry = version.entries.find(
+          const entry = teacherEntries.find(
             (e) =>
               e.timeSlot.dayOfWeek === d.value &&
               e.timeSlot.blockNumber === refSlot.blockNumber
@@ -387,7 +409,7 @@ export const ScheduleExportService = {
           if (entry) {
             cells[d.value] = {
               primary: `${entry.courseSubject.subject.code} - ${entry.courseSubject.course.name}`,
-              secondary: entry.room.name,
+              secondary: entry.teacherRoomName,
             };
           } else {
             const act = version.nonTeachingActivities.find(
@@ -421,7 +443,7 @@ export const ScheduleExportService = {
       schoolName: version.school.name,
       versionName: version.name,
       title: `Horario Docente: ${teacher.firstName} ${teacher.lastName}`,
-      subtitle: `Contrato: ${teacher.contractHours}h (${breakdown.ratioLabel}) | Lectivos: ${version.entries.length}/${breakdown.legalMaxTeachingBlocks} blq (${breakdown.actualTeachingPct}%) | No lectivos min: ${formatChronologicalMinutes(breakdown.minNonTeachingChronologicalMinutes)} (agendados: ${version.nonTeachingActivities.length} blq)`,
+      subtitle: `Contrato: ${teacher.contractHours}h (${breakdown.ratioLabel}) | Lectivos: ${teacherEntries.length}/${breakdown.legalMaxTeachingBlocks} blq (${breakdown.actualTeachingPct}%) | No lectivos min: ${formatChronologicalMinutes(breakdown.minNonTeachingChronologicalMinutes)} (agendados: ${version.nonTeachingActivities.length} blq)`,
       rows,
       footerSummary: `Generado por ProfeKit Horarios - Ley 20.903 (${breakdown.ratioLabel}, bloque ${breakdown.blockDurationMinutes}m${breakdown.breakMinutesPerBlock > 0 ? ` + ${breakdown.breakMinutesPerBlock}m recreo` : ""})`,
     });
@@ -437,7 +459,8 @@ export const ScheduleExportService = {
         include: {
           school: true,
           entries: {
-            where: { roomId },
+            // Bloques que usan la sala, o en que un docente de apoyo trabaja en ella (Aula de Recursos)
+            where: { OR: [{ roomId }, { teachers: { some: { roomId } } }] },
             include: {
               courseSubject: {
                 include: {
@@ -447,6 +470,7 @@ export const ScheduleExportService = {
                 },
               },
               timeSlot: true,
+              teachers: { include: { teacher: true } },
             },
           },
         },
@@ -473,7 +497,11 @@ export const ScheduleExportService = {
               e.timeSlot.blockNumber === refSlot.blockNumber
           );
           if (entry) {
-            const teacher = entry.courseSubject.teachers[0]?.teacher;
+            const teacher =
+              entry.roomId === roomId
+                ? (entry.courseSubject.teachers.find((t) => t.role === "LEAD") ??
+                    entry.courseSubject.teachers[0])?.teacher
+                : entry.teachers.find((t) => t.roomId === roomId)?.teacher;
             cells[d.value] = {
               primary: `${entry.courseSubject.course.name} - ${entry.courseSubject.subject.code}`,
               secondary: teacher ? `${teacher.firstName[0]}. ${teacher.lastName}` : "",

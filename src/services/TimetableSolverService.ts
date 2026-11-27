@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import {
   calculateEffectiveCourseBlocks,
@@ -10,6 +11,11 @@ import {
   ROOM_TYPE_LABELS,
   type RoomAssignmentMode,
 } from "@/lib/scheduling/constants";
+import {
+  effectiveAssignedBlocks,
+  isPartialSupportAssignment,
+  resolveEntryParticipants,
+} from "@/lib/scheduling/entryParticipants";
 import { Prisma, type RoomType, type SchedulingRule } from "@prisma/client";
 
 export interface PreconditionIssue {
@@ -90,7 +96,10 @@ interface InternalEntry {
   requiredRoomId: string | null;
   requiresConsecutiveBlocks: boolean;
   syncGroupCode: string | null;
+  /** Docentes que participan en este bloque (titulares + apoyos asignados a este bloque). */
   teacherIds: string[];
+  /** Docentes que están en otra sala durante el bloque (ej. PIE en Aula de Recursos): teacherId -> roomId. */
+  teacherRooms?: Record<string, string>;
   timeSlotId: string;
   roomId: string;
   isLocked: boolean;
@@ -225,6 +234,72 @@ function isTeacherUnavailable(
  * Evalúa una lista de entradas en memoria contra todas las reglas HARD y SOFT.
  * Utilizado tanto por detectConflicts, simulateSwap como por el optimizador del solver.
  */
+/** Lo que la configuración pide de un docente de apoyo en una asignatura (para auditar la versión). */
+interface SupportExpectation {
+  courseSubjectId: string;
+  teacherId: string;
+  teacherName: string;
+  subjectName: string;
+  courseName: string;
+  /** Bloques semanales que debe acompañar. */
+  expectedBlocks: number;
+  /** De ellos, cuántos en Aula de Recursos. */
+  expectedResourceBlocks: number;
+}
+
+function buildSupportExpectations(
+  courses: Array<{
+    name: string;
+    courseSubjects: Array<{
+      id: string;
+      weeklyBlocks: number;
+      subject: { name: string };
+      teachers: Array<{
+        teacherId: string;
+        role: string;
+        assignedBlocks: number | null;
+        resourceRoomBlocks: number;
+        teacher: { firstName: string; lastName: string };
+      }>;
+    }>;
+  }>
+): SupportExpectation[] {
+  const out: SupportExpectation[] = [];
+  for (const course of courses) {
+    for (const cs of course.courseSubjects) {
+      for (const t of cs.teachers) {
+        const partial = isPartialSupportAssignment(t, cs.weeklyBlocks);
+        const resource = t.role === "PIE_SUPPORT" ? t.resourceRoomBlocks : 0;
+        if (!partial && resource <= 0) continue;
+        out.push({
+          courseSubjectId: cs.id,
+          teacherId: t.teacherId,
+          teacherName: `${t.teacher.firstName} ${t.teacher.lastName}`,
+          subjectName: cs.subject.name,
+          courseName: course.name,
+          expectedBlocks: effectiveAssignedBlocks(t, cs.weeklyBlocks),
+          expectedResourceBlocks: resource,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/** Convierte las filas ScheduleEntryTeacher (o, en versiones antiguas, los docentes de la asignatura) a teacherIds/teacherRooms. */
+function toInternalParticipants(e: {
+  roomId: string;
+  teachers?: Array<{ teacherId: string; roomId: string | null }>;
+  courseSubject: { teachers: Array<{ teacherId: string }> };
+}): Pick<InternalEntry, "teacherIds" | "teacherRooms"> {
+  const participants = resolveEntryParticipants(e);
+  const teacherRooms: Record<string, string> = {};
+  for (const p of participants) {
+    if (p.inOtherRoom) teacherRooms[p.teacherId] = p.roomId;
+  }
+  return { teacherIds: participants.map((p) => p.teacherId), teacherRooms };
+}
+
 interface TeacherEvalInfo {
   name: string;
   contractHours: number;
@@ -242,7 +317,8 @@ function evaluateScheduleState(
   teacherMap: Map<string, TeacherEvalInfo>,
   roomMap: Map<string, RoomEvalInfo>,
   rules: SchedulingRule[],
-  lunchBlockByBell: Map<string, { beforeBlock: number; afterBlock: number }>
+  lunchBlockByBell: Map<string, { beforeBlock: number; afterBlock: number }>,
+  supportExpectations: SupportExpectation[] = []
 ): ConflictAuditResult {
   const hardConflicts: ScheduleConflict[] = [];
   const softViolations: ScheduleConflict[] = [];
@@ -293,11 +369,15 @@ function evaluateScheduleState(
     cArr.push(entry);
     courseSlotUsage.set(cKey, cArr);
 
-    // 2. Ocupación de sala
-    const rKey = `${entry.roomId}:${timeKey}`;
-    const rArr = roomSlotUsage.get(rKey) ?? [];
-    rArr.push(entry);
-    roomSlotUsage.set(rKey, rArr);
+    // 2. Ocupación de sala (sala del bloque + salas aparte de docentes de apoyo, ej. Aula de Recursos)
+    const occupiedRoomIds = new Set<string>([entry.roomId]);
+    for (const rid of Object.values(entry.teacherRooms ?? {})) occupiedRoomIds.add(rid);
+    for (const rid of occupiedRoomIds) {
+      const rKey = `${rid}:${timeKey}`;
+      const rArr = roomSlotUsage.get(rKey) ?? [];
+      rArr.push(entry);
+      roomSlotUsage.set(rKey, rArr);
+    }
 
     // 3. Ocupación de profesores (incluyendo codocentes y PIE)
     const entryClassKey = getEntryClassKey(entry);
@@ -874,7 +954,7 @@ function evaluateScheduleState(
       const tdRoomArr = teacherDayRoomEntries.get(tdKey) ?? [];
       tdRoomArr.push({
         blockNumber: slot.blockNumber,
-        roomId: entry.roomId,
+        roomId: entry.teacherRooms?.[tid] ?? entry.roomId,
         bellScheduleId: slot.bellScheduleId,
         entryId: entry.id,
       });
@@ -1492,6 +1572,56 @@ function evaluateScheduleState(
     }
   }
 
+  // Cobertura de apoyos parciales (PIE / codocencia): bloques acompañados y bloques en Aula de Recursos
+  if (supportExpectations.length > 0) {
+    const pieRule = rules.find((r) => r.ruleType === "PIE_CO_TEACHING_SYNC");
+    const csEntries = new Map<string, InternalEntry[]>();
+    for (const e of entries) {
+      const arr = csEntries.get(e.courseSubjectId) ?? [];
+      arr.push(e);
+      csEntries.set(e.courseSubjectId, arr);
+    }
+    for (const exp of supportExpectations) {
+      const list = csEntries.get(exp.courseSubjectId) ?? [];
+      if (list.length === 0) continue;
+      const withTeacher = list.filter((e) => e.teacherIds.includes(exp.teacherId));
+      const expected = Math.min(exp.expectedBlocks, list.length);
+      if (withTeacher.length < expected) {
+        const conflict = {
+          id: `support-shortfall-${exp.courseSubjectId}-${exp.teacherId}`,
+          ruleType: "PIE_CO_TEACHING_SYNC",
+          message: `${exp.teacherName} acompaña ${withTeacher.length} de ${expected} bloques de ${exp.subjectName} (${exp.courseName}): no tiene disponibilidad en los demás.`,
+          entryIds: list.map((e) => e.id),
+          entityIds: [exp.teacherId],
+        };
+        if (pieRule) {
+          pushRuleViolation(pieRule, hardConflicts, softViolations, conflict, 40, expected - withTeacher.length);
+        } else {
+          softViolations.push({
+            ...conflict,
+            severity: "SOFT",
+            penalty: 40 * (expected - withTeacher.length),
+          });
+        }
+      }
+      const expectedResource = Math.min(exp.expectedResourceBlocks, withTeacher.length);
+      if (expectedResource > 0) {
+        const inResource = withTeacher.filter((e) => Boolean(e.teacherRooms?.[exp.teacherId])).length;
+        if (inResource < expectedResource) {
+          softViolations.push({
+            id: `support-resource-room-${exp.courseSubjectId}-${exp.teacherId}`,
+            severity: "SOFT",
+            ruleType: "PIE_CO_TEACHING_SYNC",
+            message: `${exp.teacherName} tiene ${inResource} de ${expectedResource} bloques de ${exp.subjectName} (${exp.courseName}) en Aula de Recursos: no había una sala PIE libre en los demás.`,
+            penalty: 15 * (expectedResource - inResource),
+            entryIds: withTeacher.map((e) => e.id),
+            entityIds: [exp.teacherId],
+          });
+        }
+      }
+    }
+  }
+
   const hardPenalty = hardConflicts.reduce((sum, c) => sum + c.penalty, 0);
   const softPenalty = softViolations.reduce((sum, c) => sum + c.penalty, 0);
   const totalPenalty = hardPenalty + softPenalty;
@@ -1514,6 +1644,196 @@ function evaluateScheduleState(
     hardConflicts,
     softViolations,
   };
+}
+
+/**
+ * Asigna los docentes de apoyo parcial (ej. PIE que acompaña 2 de 6 bloques de Matemática) a bloques
+ * concretos ya ubicados y, para el PIE, reserva el Aula de Recursos en los bloques que lo requieren.
+ * Muta placedEntries (teacherIds / teacherRooms). Los déficits los reporta evaluateScheduleState.
+ */
+function assignSupportTeachers(params: {
+  courses: Awaited<ReturnType<typeof loadSchoolContext>>["courses"];
+  rooms: Awaited<ReturnType<typeof loadSchoolContext>>["rooms"];
+  rules: SchedulingRule[];
+  placedEntries: InternalEntry[];
+  slotMap: Map<string, InternalSlot>;
+  teacherMap: Map<string, TeacherEvalInfo>;
+  baseActivities: Array<{ teacherId: string; timeSlotId: string; roomId: string | null }>;
+}) {
+  const { courses, rooms, rules, placedEntries, slotMap, teacherMap, baseActivities } = params;
+
+  const teacherBusy = new Set<string>(); // `${teacherId}:${day}:${block}`
+  const teacherDayCount = new Map<string, number>(); // `${teacherId}:${day}`
+  const roomBusy = new Set<string>(); // `${roomId}:${day}:${block}`
+  const timeKey = (e: InternalEntry): string | null => {
+    const slot = slotMap.get(e.timeSlotId);
+    return slot ? `${slot.dayOfWeek}:${slot.blockNumber}` : null;
+  };
+  const markTeacher = (tid: string, e: InternalEntry) => {
+    const slot = slotMap.get(e.timeSlotId);
+    if (!slot) return;
+    const k = `${tid}:${slot.dayOfWeek}:${slot.blockNumber}`;
+    if (teacherBusy.has(k)) return;
+    teacherBusy.add(k);
+    const dk = `${tid}:${slot.dayOfWeek}`;
+    teacherDayCount.set(dk, (teacherDayCount.get(dk) ?? 0) + 1);
+  };
+
+  for (const e of placedEntries) {
+    const tk = timeKey(e);
+    if (!tk) continue;
+    for (const tid of e.teacherIds) markTeacher(tid, e);
+    roomBusy.add(`${e.roomId}:${tk}`);
+    for (const rid of Object.values(e.teacherRooms ?? {})) roomBusy.add(`${rid}:${tk}`);
+  }
+  for (const act of baseActivities) {
+    const slot = slotMap.get(act.timeSlotId);
+    if (!slot) continue;
+    teacherBusy.add(`${act.teacherId}:${slot.dayOfWeek}:${slot.blockNumber}`);
+    if (act.roomId) roomBusy.add(`${act.roomId}:${slot.dayOfWeek}:${slot.blockNumber}`);
+  }
+
+  const teacherCanJoin = (tid: string, e: InternalEntry): boolean => {
+    const slot = slotMap.get(e.timeSlotId);
+    if (!slot) return false;
+    if (teacherBusy.has(`${tid}:${slot.dayOfWeek}:${slot.blockNumber}`)) return false;
+    if (isTeacherUnavailable(tid, slot.dayOfWeek, slot.blockNumber, rules)) return false;
+    const maxDaily = teacherMap.get(tid)?.maxDailyHours;
+    if (maxDaily !== undefined && (teacherDayCount.get(`${tid}:${slot.dayOfWeek}`) ?? 0) >= maxDaily) {
+      return false;
+    }
+    return true;
+  };
+
+  const groupByDay = (list: InternalEntry[]): Array<{ day: number; entries: InternalEntry[] }> => {
+    const map = new Map<number, InternalEntry[]>();
+    for (const e of list) {
+      const slot = slotMap.get(e.timeSlotId);
+      if (!slot) continue;
+      const arr = map.get(slot.dayOfWeek) ?? [];
+      arr.push(e);
+      map.set(slot.dayOfWeek, arr);
+    }
+    return [...map.entries()].map(([day, entries]) => ({
+      day,
+      entries: entries.sort(
+        (a, b) =>
+          (slotMap.get(a.timeSlotId)?.blockNumber ?? 0) - (slotMap.get(b.timeSlotId)?.blockNumber ?? 0)
+      ),
+    }));
+  };
+
+  const entriesByCS = new Map<string, InternalEntry[]>();
+  for (const e of placedEntries) {
+    const arr = entriesByCS.get(e.courseSubjectId) ?? [];
+    arr.push(e);
+    entriesByCS.set(e.courseSubjectId, arr);
+  }
+
+  const assignments: Array<{
+    teacherId: string;
+    partial: boolean;
+    neededBlocks: number;
+    resourceRoomBlocks: number;
+    resourceRoomId: string | null;
+    entries: InternalEntry[];
+  }> = [];
+  for (const course of courses) {
+    for (const cs of course.courseSubjects) {
+      const entries = entriesByCS.get(cs.id) ?? [];
+      if (entries.length === 0) continue;
+      for (const t of cs.teachers) {
+        const partial = isPartialSupportAssignment(t, cs.weeklyBlocks);
+        const resourceRoomBlocks = t.role === "PIE_SUPPORT" ? t.resourceRoomBlocks : 0;
+        if (!partial && resourceRoomBlocks <= 0) continue;
+        assignments.push({
+          teacherId: t.teacherId,
+          partial,
+          neededBlocks: effectiveAssignedBlocks(t, cs.weeklyBlocks),
+          resourceRoomBlocks,
+          resourceRoomId: t.resourceRoomId,
+          entries,
+        });
+      }
+    }
+  }
+
+  // Primero los apoyos con menos holgura (menos bloques disponibles respecto de los que necesitan)
+  const slack = (a: (typeof assignments)[number]) =>
+    a.entries.filter((e) => !e.teacherIds.includes(a.teacherId) && teacherCanJoin(a.teacherId, e)).length -
+    (a.neededBlocks - a.entries.filter((e) => e.teacherIds.includes(a.teacherId)).length);
+  const slackById = new Map(assignments.map((a) => [a, slack(a)]));
+  assignments.sort((a, b) => (slackById.get(a) ?? 0) - (slackById.get(b) ?? 0));
+
+  const pieRooms = rooms.filter((r) => r.roomType === "PIE_ROOM");
+
+  for (const a of assignments) {
+    const tid = a.teacherId;
+
+    // 1. Elegir los bloques que acompaña (preferir días completos de la asignatura, ej. el bloque doble)
+    if (a.partial) {
+      let remaining = a.neededBlocks - a.entries.filter((e) => e.teacherIds.includes(tid)).length;
+      const groups = groupByDay(
+        a.entries.filter((e) => !e.teacherIds.includes(tid) && teacherCanJoin(tid, e))
+      );
+      while (remaining > 0 && groups.length > 0) {
+        groups.sort((x, y) => {
+          const exactX = x.entries.length === remaining ? 0 : 1;
+          const exactY = y.entries.length === remaining ? 0 : 1;
+          if (exactX !== exactY) return exactX - exactY;
+          if (y.entries.length !== x.entries.length) return y.entries.length - x.entries.length;
+          // Compactar el día del docente de apoyo: preferir días en que ya tiene clases
+          const loadX = teacherDayCount.get(`${tid}:${x.day}`) ?? 0;
+          const loadY = teacherDayCount.get(`${tid}:${y.day}`) ?? 0;
+          if (loadX !== loadY) return loadY - loadX;
+          return x.day - y.day;
+        });
+        const group = groups.shift()!;
+        for (const e of group.entries) {
+          if (remaining <= 0) break;
+          if (!teacherCanJoin(tid, e)) continue;
+          e.teacherIds = [...e.teacherIds, tid];
+          markTeacher(tid, e);
+          remaining--;
+        }
+      }
+    }
+
+    // 2. Aula de Recursos: el docente PIE trabaja en una sala aparte; el titular sigue en la sala del bloque
+    let remainingResource =
+      a.resourceRoomBlocks -
+      a.entries.filter((e) => e.teacherIds.includes(tid) && e.teacherRooms?.[tid]).length;
+    if (remainingResource <= 0 || pieRooms.length === 0) continue;
+
+    const roomOrder = [
+      ...pieRooms.filter((r) => r.id === a.resourceRoomId),
+      ...pieRooms.filter((r) => r.id !== a.resourceRoomId),
+    ];
+    const isRoomFree = (roomId: string, e: InternalEntry) => {
+      const tk = timeKey(e);
+      return Boolean(tk) && !roomBusy.has(`${roomId}:${tk}`);
+    };
+    const assignRoom = (e: InternalEntry, roomId: string) => {
+      e.teacherRooms = { ...(e.teacherRooms ?? {}), [tid]: roomId };
+      roomBusy.add(`${roomId}:${timeKey(e)}`);
+      remainingResource--;
+    };
+
+    const participating = groupByDay(
+      a.entries.filter((e) => e.teacherIds.includes(tid) && !e.teacherRooms?.[tid])
+    ).sort((x, y) => y.entries.length - x.entries.length || x.day - y.day);
+
+    for (const group of participating) {
+      if (remainingResource <= 0) break;
+      const take = group.entries.slice(0, remainingResource);
+      // Misma sala para todo el tramo del día si es posible
+      const sameRoom = roomOrder.find((r) => take.every((e) => isRoomFree(r.id, e)));
+      for (const e of take) {
+        const room = sameRoom ?? roomOrder.find((r) => isRoomFree(r.id, e));
+        if (room) assignRoom(e, room.id);
+      }
+    }
+  }
 }
 
 async function loadSchoolContext(schoolId: string) {
@@ -1697,6 +2017,19 @@ export const TimetableSolverService = {
         }
 
         for (const cst of cs.teachers) {
+          if (
+            cst.role === "PIE_SUPPORT" &&
+            cst.resourceRoomBlocks > 0 &&
+            !rooms.some((r) => r.roomType === "PIE_ROOM")
+          ) {
+            issues.push({
+              severity: "WARNING",
+              code: "NO_PIE_ROOM",
+              entityType: "COURSE",
+              entityId: course.id,
+              message: `${cs.subject.name} en ${course.name} tiene bloques de apoyo PIE en Aula de Recursos, pero no hay salas de tipo "${ROOM_TYPE_LABELS.PIE_ROOM}". Esos bloques quedarán en el aula regular.`,
+            });
+          }
           const blocksForTeacher = cst.assignedBlocks ?? cs.weeklyBlocks;
           teacherAssigned.set(
             cst.teacherId,
@@ -1840,9 +2173,15 @@ export const TimetableSolverService = {
     const teacherMap = buildTeacherEvalMap(teachers, courses, bellSchedules, rules);
     const roomMap = buildRoomMap(rooms);
     const lunchBlockByBell = buildLunchBlockMap(bellSchedules);
+    const supportExpectations = buildSupportExpectations(courses);
 
     // Cargar bloques fijados y actividades no lectivas si hay una versión base
-    const lockedEntries: Array<{ courseSubjectId: string; timeSlotId: string; roomId: string }> = [];
+    const lockedEntries: Array<{
+      courseSubjectId: string;
+      timeSlotId: string;
+      roomId: string;
+      participants: Array<{ teacherId: string; roomId: string | null }>;
+    }> = [];
     const baseActivities: Array<{
       teacherId: string;
       timeSlotId: string;
@@ -1856,7 +2195,10 @@ export const TimetableSolverService = {
       const base = await prisma.scheduleVersion.findUnique({
         where: { id: options.baseVersionId },
         include: {
-          entries: { where: { isLocked: true } },
+          entries: {
+            where: { isLocked: true },
+            include: { teachers: { select: { teacherId: true, roomId: true } } },
+          },
           nonTeachingActivities: true,
         },
       });
@@ -1866,6 +2208,7 @@ export const TimetableSolverService = {
             courseSubjectId: e.courseSubjectId,
             timeSlotId: e.timeSlotId,
             roomId: e.roomId,
+            participants: e.teachers,
           });
         }
         for (const act of base.nonTeachingActivities) {
@@ -1996,7 +2339,10 @@ export const TimetableSolverService = {
           weeklyBlocks: cs.weeklyBlocks,
           requiresConsecutiveBlocks: cs.requiresConsecutiveBlocks,
           syncGroupCode: cs.syncGroupCode,
-          teacherIds: cs.teachers.map((t) => t.teacherId),
+          // Los apoyos parciales (PIE que acompaña solo algunos bloques) se asignan después de ubicar los bloques
+          teacherIds: cs.teachers
+            .filter((t) => !isPartialSupportAssignment(t, cs.weeklyBlocks))
+            .map((t) => t.teacherId),
         });
       }
     }
@@ -2009,9 +2355,19 @@ export const TimetableSolverService = {
       csInfo: NonNullable<ReturnType<typeof csLookup.get>>,
       slot: InternalSlot,
       roomId: string,
-      isLocked: boolean
+      isLocked: boolean,
+      participants?: Array<{ teacherId: string; roomId: string | null }>
     ) => {
       const id = `tmp-${placedEntries.length + 1}`;
+      // Bloques fijados de una versión base conservan sus participantes (incluido el apoyo PIE y su sala)
+      const teacherIds =
+        participants && participants.length > 0
+          ? participants.map((p) => p.teacherId)
+          : [...csInfo.teacherIds];
+      const teacherRooms: Record<string, string> = {};
+      for (const p of participants ?? []) {
+        if (p.roomId && p.roomId !== roomId) teacherRooms[p.teacherId] = p.roomId;
+      }
       placedEntries.push({
         id,
         courseSubjectId: csInfo.courseSubjectId,
@@ -2025,7 +2381,8 @@ export const TimetableSolverService = {
         requiredRoomId: csInfo.requiredRoomId,
         requiresConsecutiveBlocks: csInfo.requiresConsecutiveBlocks,
         syncGroupCode: csInfo.syncGroupCode,
-        teacherIds: csInfo.teacherIds,
+        teacherIds,
+        teacherRooms,
         timeSlotId: slot.id,
         roomId,
         isLocked,
@@ -2037,7 +2394,10 @@ export const TimetableSolverService = {
 
       courseBusy.add(`${csInfo.courseId}:${slot.dayOfWeek}:${slot.blockNumber}`);
       roomBusy.add(`${roomId}:${slot.dayOfWeek}:${slot.blockNumber}`);
-      for (const tid of csInfo.teacherIds) {
+      for (const rid of Object.values(teacherRooms)) {
+        roomBusy.add(`${rid}:${slot.dayOfWeek}:${slot.blockNumber}`);
+      }
+      for (const tid of teacherIds) {
         teacherBusy.add(`${tid}:${slot.dayOfWeek}:${slot.blockNumber}`);
         const tdKey = `${tid}:${slot.dayOfWeek}`;
         teacherDayCount.set(tdKey, (teacherDayCount.get(tdKey) ?? 0) + 1);
@@ -2064,7 +2424,7 @@ export const TimetableSolverService = {
       const csInfo = csLookup.get(le.courseSubjectId);
       const slot = slotMap.get(le.timeSlotId);
       if (!csInfo || !slot) continue;
-      markPlaced(csInfo, slot, le.roomId, true);
+      markPlaced(csInfo, slot, le.roomId, true, le.participants);
       lockedCountByCS.set(le.courseSubjectId, (lockedCountByCS.get(le.courseSubjectId) ?? 0) + 1);
     }
 
@@ -3235,6 +3595,30 @@ export const TimetableSolverService = {
       if (!improved) break;
     }
 
+    // 4.5 Apoyos parciales (PIE / codocencia) y Aula de Recursos.
+    // Con los bloques ya ubicados, se elige en cuáles participa cada docente de apoyo según su
+    // disponibilidad y, para el PIE, en cuáles trabaja en el Aula de Recursos (sala aparte).
+    assignSupportTeachers({
+      courses,
+      rooms,
+      rules,
+      placedEntries,
+      slotMap,
+      teacherMap,
+      baseActivities,
+    });
+    bestAudit = evaluateScheduleState(
+      placedEntries,
+      slotMap,
+      classSlotsByBell,
+      nonTeachingMap,
+      teacherMap,
+      roomMap,
+      rules,
+      lunchBlockByBell,
+      supportExpectations
+    );
+
     // 5. Persistir la nueva ScheduleVersion y sus entradas
     const existingCount = await prisma.scheduleVersion.count({ where: { schoolId } });
     const versionName = options.name?.trim() || `Borrador v${existingCount + 1}`;
@@ -3252,8 +3636,10 @@ export const TimetableSolverService = {
       });
 
       if (placedEntries.length > 0) {
+        const withIds = placedEntries.map((e) => ({ entry: e, id: crypto.randomUUID() }));
         await tx.scheduleEntry.createMany({
-          data: placedEntries.map((e) => ({
+          data: withIds.map(({ entry: e, id }) => ({
+            id,
             versionId: version.id,
             courseSubjectId: e.courseSubjectId,
             timeSlotId: e.timeSlotId,
@@ -3261,6 +3647,16 @@ export const TimetableSolverService = {
             isLocked: e.isLocked,
           })),
         });
+        const participantRows = withIds.flatMap(({ entry: e, id }) =>
+          [...new Set(e.teacherIds)].map((teacherId) => ({
+            entryId: id,
+            teacherId,
+            roomId: e.teacherRooms?.[teacherId] ?? null,
+          }))
+        );
+        if (participantRows.length > 0) {
+          await tx.scheduleEntryTeacher.createMany({ data: participantRows });
+        }
       }
 
       if (baseActivities.length > 0) {
@@ -3305,6 +3701,7 @@ export const TimetableSolverService = {
             },
             timeSlot: true,
             room: true,
+            teachers: { select: { teacherId: true, roomId: true } },
           },
         },
         nonTeachingActivities: true,
@@ -3348,6 +3745,7 @@ export const TimetableSolverService = {
     const teacherMap = buildTeacherEvalMap(teachers, courses, bellSchedules, rules);
     const roomMap = buildRoomMap(rooms);
     const lunchBlockByBell = buildLunchBlockMap(bellSchedules);
+    const supportExpectations = buildSupportExpectations(courses);
 
     const internalEntries: InternalEntry[] = version.entries.map((e) => ({
       id: e.id,
@@ -3362,7 +3760,7 @@ export const TimetableSolverService = {
       requiredRoomId: e.courseSubject.subject.requiredRoomId,
       requiresConsecutiveBlocks: e.courseSubject.requiresConsecutiveBlocks,
       syncGroupCode: e.courseSubject.syncGroupCode,
-      teacherIds: e.courseSubject.teachers.map((t) => t.teacherId),
+      ...toInternalParticipants(e),
       timeSlotId: e.timeSlotId,
       roomId: e.roomId,
       isLocked: e.isLocked,
@@ -3380,7 +3778,8 @@ export const TimetableSolverService = {
       teacherMap,
       roomMap,
       rules,
-      lunchBlockByBell
+      lunchBlockByBell,
+      supportExpectations
     );
   },
 
@@ -3398,6 +3797,7 @@ export const TimetableSolverService = {
             },
             timeSlot: true,
             room: true,
+            teachers: { select: { teacherId: true, roomId: true } },
           },
         },
         nonTeachingActivities: true,
@@ -3437,6 +3837,7 @@ export const TimetableSolverService = {
     const teacherMap = buildTeacherEvalMap(teachers, courses, bellSchedules, rules);
     const roomMap = buildRoomMap(rooms);
     const lunchBlockByBell = buildLunchBlockMap(bellSchedules);
+    const supportExpectations = buildSupportExpectations(courses);
 
     const toInternal = (): InternalEntry[] =>
       version.entries.map((e) => ({
@@ -3452,7 +3853,7 @@ export const TimetableSolverService = {
         requiredRoomId: e.courseSubject.subject.requiredRoomId,
         requiresConsecutiveBlocks: e.courseSubject.requiresConsecutiveBlocks,
         syncGroupCode: e.courseSubject.syncGroupCode,
-        teacherIds: e.courseSubject.teachers.map((t) => t.teacherId),
+        ...toInternalParticipants(e),
         timeSlotId: e.timeSlotId,
         roomId: e.roomId,
         isLocked: e.isLocked,
@@ -3471,7 +3872,8 @@ export const TimetableSolverService = {
       teacherMap,
       roomMap,
       rules,
-      lunchBlockByBell
+      lunchBlockByBell,
+      supportExpectations
     );
 
     const afterEntries = toInternal();
@@ -3564,7 +3966,8 @@ export const TimetableSolverService = {
       teacherMap,
       roomMap,
       rules,
-      lunchBlockByBell
+      lunchBlockByBell,
+      supportExpectations
     );
 
     const beforeHardIds = new Set(beforeAudit.hardConflicts.map((c) => c.message));

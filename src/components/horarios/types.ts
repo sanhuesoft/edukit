@@ -75,6 +75,8 @@ export interface TeacherDTO {
     id: string;
     role: TeacherAssignmentRole;
     assignedBlocks: number | null;
+    resourceRoomBlocks: number;
+    resourceRoomId: string | null;
     courseSubject: {
       id: string;
       weeklyBlocks: number;
@@ -98,6 +100,8 @@ export interface CourseSubjectDTO {
     teacherId: string;
     role: TeacherAssignmentRole;
     assignedBlocks: number | null;
+    resourceRoomBlocks: number;
+    resourceRoomId: string | null;
     teacher: {
       id: string;
       firstName: string;
@@ -150,6 +154,11 @@ export interface ScheduleEntryDTO {
   isLocked: boolean;
   timeSlot: TimeSlotDTO;
   room: RoomDTO;
+  /**
+   * Docentes que participan en este bloque y su sala (null = sala del bloque).
+   * Vacío en versiones antiguas: participan todos los docentes de la asignatura.
+   */
+  teachers?: Array<{ id: string; teacherId: string; roomId: string | null }>;
   courseSubject: {
     id: string;
     courseId: string;

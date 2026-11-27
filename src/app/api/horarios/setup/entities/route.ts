@@ -17,6 +17,55 @@ import type { LevelCode, Prisma, RoomType, TeacherAssignmentRole } from "@prisma
 
 const DEFAULT_AUTO_ROOM_CAPACITY = 45;
 
+type TeacherAssignmentInput = {
+  teacherId: string;
+  role?: TeacherAssignmentRole;
+  assignedBlocks?: number | null;
+  resourceRoomBlocks?: number | null;
+  resourceRoomId?: string | null;
+};
+
+/**
+ * Limpia la configuración de un docente en una asignatura:
+ * - assignedBlocks: null = participa en todos los bloques; si es >= weeklyBlocks se guarda null.
+ * - resourceRoomBlocks / resourceRoomId: solo aplican al apoyo PIE (bloques en Aula de Recursos).
+ */
+function normalizeTeacherAssignment(
+  t: TeacherAssignmentInput,
+  weeklyBlocks: number,
+  pieRoomIds: Set<string>
+) {
+  const role: TeacherAssignmentRole = t.role ?? "LEAD";
+  const rawAssigned =
+    t.assignedBlocks === null || t.assignedBlocks === undefined ? null : Math.round(Number(t.assignedBlocks));
+  const assignedBlocks =
+    rawAssigned === null || !Number.isFinite(rawAssigned) || rawAssigned >= weeklyBlocks
+      ? null
+      : Math.max(1, rawAssigned);
+  const supportBlocks = assignedBlocks ?? weeklyBlocks;
+
+  if (role !== "PIE_SUPPORT") {
+    return { role, assignedBlocks, resourceRoomBlocks: 0, resourceRoomId: null };
+  }
+  const rawResource = Math.round(Number(t.resourceRoomBlocks ?? 0));
+  const resourceRoomBlocks = Number.isFinite(rawResource)
+    ? Math.min(supportBlocks, Math.max(0, rawResource))
+    : 0;
+  const resourceRoomId =
+    resourceRoomBlocks > 0 && t.resourceRoomId && pieRoomIds.has(t.resourceRoomId)
+      ? t.resourceRoomId
+      : null;
+  return { role, assignedBlocks, resourceRoomBlocks, resourceRoomId };
+}
+
+async function loadPieRoomIds(schoolId: string): Promise<Set<string>> {
+  const rooms = await prisma.room.findMany({
+    where: { schoolId, roomType: "PIE_ROOM" },
+    select: { id: true },
+  });
+  return new Set(rooms.map((r) => r.id));
+}
+
 async function resolveAutoDefaultRoomId(
   tx: Prisma.TransactionClient,
   params: {
@@ -286,6 +335,8 @@ export async function POST(request: Request) {
                       teacherId: t.teacherId,
                       role: t.role,
                       assignedBlocks: t.assignedBlocks,
+                      resourceRoomBlocks: t.resourceRoomBlocks,
+                      resourceRoomId: t.resourceRoomId,
                     })),
                   },
                 },
@@ -419,12 +470,9 @@ export async function POST(request: Request) {
 
       case "courseSubject": {
         const teachersInput = Array.isArray(body.data.teachers)
-          ? (body.data.teachers as Array<{
-              teacherId: string;
-              role?: TeacherAssignmentRole;
-              assignedBlocks?: number | null;
-            }>)
+          ? (body.data.teachers as TeacherAssignmentInput[])
           : [];
+        const pieRoomIds = await loadPieRoomIds(schoolId);
 
         const item = await prisma.courseSubject.create({
           data: {
@@ -439,8 +487,7 @@ export async function POST(request: Request) {
             teachers: {
               create: teachersInput.map((t) => ({
                 teacherId: t.teacherId,
-                role: t.role ?? "LEAD",
-                assignedBlocks: t.assignedBlocks ?? null,
+                ...normalizeTeacherAssignment(t, Number(body.data.weeklyBlocks || 2), pieRoomIds),
               })),
             },
           },
@@ -792,12 +839,9 @@ export async function PATCH(request: Request) {
             : existing.syncGroupCode;
 
         const teachersInput = Array.isArray(body.data.teachers)
-          ? (body.data.teachers as Array<{
-              teacherId: string;
-              role?: TeacherAssignmentRole;
-              assignedBlocks?: number | null;
-            }>)
+          ? (body.data.teachers as TeacherAssignmentInput[])
           : null;
+        const pieRoomIds = teachersInput ? await loadPieRoomIds(schoolId) : new Set<string>();
 
         const shouldPropagateSyncRename =
           Boolean(body.data.propagateSyncRename) &&
@@ -830,8 +874,13 @@ export async function PATCH(request: Request) {
                       deleteMany: {},
                       create: teachersInput.map((t) => ({
                         teacherId: t.teacherId,
-                        role: t.role ?? "LEAD",
-                        assignedBlocks: t.assignedBlocks ?? null,
+                        ...normalizeTeacherAssignment(
+                          t,
+                          body.data.weeklyBlocks !== undefined
+                            ? Number(body.data.weeklyBlocks) || existing.weeklyBlocks
+                            : existing.weeklyBlocks,
+                          pieRoomIds
+                        ),
                       })),
                     },
                   }

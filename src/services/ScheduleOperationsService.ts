@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { resolveEntryParticipants } from "@/lib/scheduling/entryParticipants";
 import { TimetableSolverService } from "@/services/TimetableSolverService";
 import { Prisma, type ScheduleChangeActionType } from "@prisma/client";
 
@@ -429,6 +430,9 @@ export const ScheduleOperationsService = {
             },
             timeSlot: true,
             room: true,
+            teachers: {
+              select: { teacherId: true, roomId: true, room: { select: { name: true } } },
+            },
           },
         },
         nonTeachingActivities: {
@@ -458,7 +462,7 @@ export const ScheduleOperationsService = {
     const teacherDayBlocks = new Map<string, Set<number>>();
 
     for (const e of version.entries) {
-      for (const cst of e.courseSubject.teachers) {
+      for (const cst of resolveEntryParticipants(e)) {
         const k = `${cst.teacherId}:${e.timeSlot.dayOfWeek}:${e.timeSlot.blockNumber}`;
         busySet.add(k);
         const tdKey = `${cst.teacherId}:${e.timeSlot.dayOfWeek}`;
@@ -489,7 +493,7 @@ export const ScheduleOperationsService = {
           .filter(
             (e) =>
               e.timeSlot.dayOfWeek === jsDay &&
-              e.courseSubject.teachers.some((t) => t.teacherId === absentTeacherId)
+              resolveEntryParticipants(e).some((t) => t.teacherId === absentTeacherId)
           )
           .sort((a, b) => a.timeSlot.blockNumber - b.timeSlot.blockNumber);
 
@@ -575,7 +579,10 @@ export const ScheduleOperationsService = {
             endTime: entry.timeSlot.endTime,
             courseName: entry.courseSubject.course.name,
             subjectName: entry.courseSubject.subject.name,
-            roomName: entry.room.name,
+            // Sala donde estaba el docente ausente (ej. Aula de Recursos si es apoyo PIE)
+            roomName:
+              entry.teachers.find((t) => t.teacherId === absentTeacherId)?.room?.name ??
+              entry.room.name,
             candidates: candidates.slice(0, 5),
           });
         }

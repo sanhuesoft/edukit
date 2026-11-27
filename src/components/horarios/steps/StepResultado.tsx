@@ -23,6 +23,7 @@ import {
   Users,
 } from "lucide-react";
 import { DAYS_OF_WEEK } from "@/lib/scheduling/constants";
+import { resolveEntryParticipants } from "@/lib/scheduling/entryParticipants";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -77,14 +78,34 @@ function getEntryColor(entry: ScheduleEntryDTO, colorBy: ColorByMode): string {
   if (colorBy === "subject") {
     return entry.courseSubject.subject.colorHex || "#2563EB";
   }
-  return entry.courseSubject.teachers[0]?.teacher.colorHex || "#2563EB";
+  const lead =
+    entry.courseSubject.teachers.find((t) => t.role === "LEAD") ?? entry.courseSubject.teachers[0];
+  return lead?.teacher.colorHex || "#2563EB";
 }
 
-function getTeacherLabel(entry: ScheduleEntryDTO): string {
-  if (entry.courseSubject.teachers.length === 0) return "Sin docente";
-  return entry.courseSubject.teachers
-    .map((t) => `${t.teacher.firstName[0]}. ${t.teacher.lastName}`)
+/** Docentes que participan en este bloque concreto, con su sala (el apoyo PIE puede estar en Aula de Recursos). */
+function getEntryParticipants(entry: ScheduleEntryDTO) {
+  return resolveEntryParticipants(entry).flatMap((p) => {
+    const assignment = entry.courseSubject.teachers.find((t) => t.teacherId === p.teacherId);
+    return assignment ? [{ ...p, role: assignment.role, teacher: assignment.teacher }] : [];
+  });
+}
+
+function getTeacherLabel(entry: ScheduleEntryDTO, roomNameById?: Map<string, string>): string {
+  const participants = getEntryParticipants(entry);
+  if (participants.length === 0) return "Sin docente";
+  return participants
+    .map(
+      (p) =>
+        `${p.teacher.firstName[0]}. ${p.teacher.lastName}` +
+        (p.inOtherRoom ? ` (${roomNameById?.get(p.roomId) ?? "otra sala"})` : "")
+    )
     .join(" / ");
+}
+
+/** Sala donde está un docente durante el bloque (la del bloque, o el Aula de Recursos si es PIE). */
+function getTeacherRoomId(entry: ScheduleEntryDTO, teacherId: string): string {
+  return getEntryParticipants(entry).find((p) => p.teacherId === teacherId)?.roomId ?? entry.roomId;
 }
 
 interface GroupedSyncOption {
@@ -103,7 +124,7 @@ function groupSyncEntries(
 ): GroupedSyncOption[] {
   const map = new Map<string, GroupedSyncOption>();
   for (const item of entries) {
-    const teacherIds = [...item.courseSubject.teachers]
+    const teacherIds = getEntryParticipants(item)
       .map((t) => t.teacherId)
       .sort()
       .join(",");
@@ -118,7 +139,7 @@ function groupSyncEntries(
       }
     } else {
       const teacherNames =
-        item.courseSubject.teachers
+        getEntryParticipants(item)
           .map((t) => `${t.teacher.firstName} ${t.teacher.lastName}`)
           .join(" + ") || "Sin docente";
       map.set(key, {
@@ -231,6 +252,10 @@ export function StepResultado({
     setup.rooms.find((r) => r.id === selectedRoomId)?.id ??
     setup.rooms[0]?.id ??
     "";
+  const roomNameById = useMemo(
+    () => new Map(setup.rooms.map((r) => [r.id, r.name])),
+    [setup.rooms]
+  );
 
   const conflictEntryIds = useMemo(() => {
     const set = new Set<string>();
@@ -286,11 +311,15 @@ export function StepResultado({
     }
     if (viewMode === "teacher") {
       return versionDetail.entries.filter((e) =>
-        e.courseSubject.teachers.some((t) => t.teacherId === effectiveTeacherId)
+        getEntryParticipants(e).some((t) => t.teacherId === effectiveTeacherId)
       );
     }
     if (viewMode === "room") {
-      return versionDetail.entries.filter((e) => e.roomId === effectiveRoomId);
+      return versionDetail.entries.filter(
+        (e) =>
+          e.roomId === effectiveRoomId ||
+          getEntryParticipants(e).some((t) => t.roomId === effectiveRoomId)
+      );
     }
     return versionDetail.entries;
   }, [
@@ -463,7 +492,7 @@ export function StepResultado({
         list.push(e);
         map.set(key, list);
       } else {
-        for (const t of e.courseSubject.teachers) {
+        for (const t of getEntryParticipants(e)) {
           const key = `${e.timeSlot.dayOfWeek}:${e.timeSlot.blockNumber}:${t.teacherId}`;
           const list = map.get(key) ?? [];
           list.push(e);
@@ -985,13 +1014,35 @@ export function StepResultado({
                                             <div className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-muted-foreground">
                                               <span className="truncate">
                                                 {viewMode === "course" &&
-                                                  `${getTeacherLabel(entry)} · ${entry.room.name}`}
+                                                  `${getTeacherLabel(entry, roomNameById)} · ${entry.room.name}`}
                                                 {viewMode === "teacher" &&
-                                                  `${entry.courseSubject.course.name} · ${entry.room.name}`}
+                                                  `${entry.courseSubject.course.name} · ${
+                                                    roomNameById.get(
+                                                      getTeacherRoomId(entry, effectiveTeacherId)
+                                                    ) ?? entry.room.name
+                                                  }`}
                                                 {viewMode === "room" &&
-                                                  `${entry.courseSubject.course.name} · ${getTeacherLabel(entry)}`}
+                                                  `${entry.courseSubject.course.name} · ${
+                                                    entry.roomId === effectiveRoomId
+                                                      ? getTeacherLabel(entry)
+                                                      : getEntryParticipants(entry)
+                                                          .filter((p) => p.roomId === effectiveRoomId)
+                                                          .map(
+                                                            (p) =>
+                                                              `${p.teacher.firstName[0]}. ${p.teacher.lastName}`
+                                                          )
+                                                          .join(" / ")
+                                                  }`}
                                               </span>
                                             </div>
+                                            {viewMode === "teacher" &&
+                                              getEntryParticipants(entry).find(
+                                                (p) => p.teacherId === effectiveTeacherId
+                                              )?.role === "PIE_SUPPORT" && (
+                                                <div className="mt-1 inline-flex items-center gap-1 rounded bg-orange-500/10 px-1.5 py-0.5 text-[10px] font-medium text-orange-700 dark:text-orange-300">
+                                                  Apoyo PIE
+                                                </div>
+                                              )}
                                             {syncCode && viewMode !== "course" && (
                                               <div className="mt-1 inline-flex items-center gap-1 rounded bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-700 dark:text-indigo-300">
                                                 <Layers className="h-2.5 w-2.5" />
@@ -1163,7 +1214,7 @@ export function StepResultado({
                                 {isGroupedMaster
                                   ? `${parallelCount} en paralelo`
                                   : masterAxis === "courses"
-                                    ? getTeacherLabel(first)
+                                    ? getTeacherLabel(first, roomNameById)
                                     : first.courseSubject.course.name}
                               </div>
                             </div>

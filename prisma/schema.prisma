@@ -183,6 +183,7 @@ model Teacher {
   qualifiedLevels      TeacherQualifiedLevel[]
   courseSubjects       CourseSubjectTeacher[]
   nonTeachingActivities TeacherNonTeachingActivity[]
+  scheduleEntryAssignments ScheduleEntryTeacher[]
 
   @@index([schoolId])
   @@map("teachers")
@@ -226,6 +227,8 @@ model Room {
   requiredBySubjects    Subject[]                    @relation("SubjectRequiredRoom")
   scheduleEntries       ScheduleEntry[]
   nonTeachingActivities TeacherNonTeachingActivity[]
+  resourceRoomFor       CourseSubjectTeacher[]       @relation("CourseSubjectTeacherResourceRoom")
+  entryTeacherRooms     ScheduleEntryTeacher[]
 
   @@unique([schoolId, name])
   @@index([schoolId])
@@ -323,11 +326,16 @@ model CourseSubjectTeacher {
   teacherId       String                @map("teacher_id") @db.Uuid
   role            TeacherAssignmentRole @default(LEAD)
   assignedBlocks  Int?                  @map("assigned_blocks")
+  /// De los bloques con apoyo (assignedBlocks), cuántos se hacen fuera del aula regular (Aula de Recursos PIE).
+  resourceRoomBlocks Int                @default(0) @map("resource_room_blocks")
+  /// Aula de Recursos preferida. Si es null, el generador usa cualquier sala de tipo PIE_ROOM libre.
+  resourceRoomId  String?               @map("resource_room_id") @db.Uuid
   createdAt       DateTime              @default(now()) @map("created_at")
   updatedAt       DateTime              @updatedAt @map("updated_at")
 
   courseSubject CourseSubject @relation(fields: [courseSubjectId], references: [id], onDelete: Cascade)
   teacher       Teacher       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  resourceRoom  Room?         @relation("CourseSubjectTeacherResourceRoom", fields: [resourceRoomId], references: [id], onDelete: SetNull)
 
   @@unique([courseSubjectId, teacherId])
   @@index([teacherId])
@@ -408,11 +416,30 @@ model ScheduleEntry {
   courseSubject CourseSubject   @relation(fields: [courseSubjectId], references: [id], onDelete: Cascade)
   timeSlot      TimeSlot        @relation(fields: [timeSlotId], references: [id], onDelete: Cascade)
   room          Room            @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  teachers      ScheduleEntryTeacher[]
 
   @@index([versionId])
   @@index([versionId, timeSlotId])
   @@index([versionId, courseSubjectId])
   @@map("schedule_entries")
+}
+
+/// Docentes que efectivamente participan en un bloque y la sala donde está cada uno.
+/// Si un bloque no tiene filas (versiones antiguas), participan todos los docentes de la asignatura.
+/// roomId null = el docente está en la sala del bloque (aula regular); con valor = otra sala (ej. Aula de Recursos).
+model ScheduleEntryTeacher {
+  id        String  @id @default(uuid()) @db.Uuid
+  entryId   String  @map("entry_id") @db.Uuid
+  teacherId String  @map("teacher_id") @db.Uuid
+  roomId    String? @map("room_id") @db.Uuid
+
+  entry   ScheduleEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  teacher Teacher       @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  room    Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@unique([entryId, teacherId])
+  @@index([teacherId])
+  @@map("schedule_entry_teachers")
 }
 
 model TeacherNonTeachingActivity {

@@ -163,6 +163,7 @@ async function main() {
       prisma.room.create({ data: { schoolId: school.id, name: "Laboratorio Ciencias", capacity: 32, roomType: "LAB" } }),
       prisma.room.create({ data: { schoolId: school.id, name: "Gimnasio", capacity: 60, roomType: "GYM" } }),
       prisma.room.create({ data: { schoolId: school.id, name: "Sala Computación", capacity: 32, roomType: "COMPUTER_LAB" } }),
+      prisma.room.create({ data: { schoolId: school.id, name: "Aula de Recursos PIE", capacity: 12, roomType: "PIE_ROOM" } }),
     ]);
 
   // 6. Catálogo de asignaturas
@@ -265,7 +266,7 @@ async function main() {
     courseId: string,
     subjectId: string,
     weeklyBlocks: number,
-    teachers: Array<{ teacherId: string; role?: "LEAD" | "CO_TEACHER" | "PIE_SUPPORT"; assignedBlocks?: number }>,
+    teachers: Array<{ teacherId: string; role?: "LEAD" | "CO_TEACHER" | "PIE_SUPPORT"; assignedBlocks?: number; resourceRoomBlocks?: number }>,
     opts?: { requiresConsecutiveBlocks?: boolean; syncGroupCode?: string; isSplitClass?: boolean }
   ) => {
     return prisma.courseSubject.create({
@@ -281,6 +282,7 @@ async function main() {
             teacherId: t.teacherId,
             role: t.role ?? "LEAD",
             assignedBlocks: t.assignedBlocks ?? null,
+            resourceRoomBlocks: t.resourceRoomBlocks ?? 0,
           })),
         },
       },
@@ -288,7 +290,8 @@ async function main() {
   };
 
   // 8° Básico A (24 bloques)
-  await assignCS(c8BA.id, mat.id, 6, [{ teacherId: tMat.id }, { teacherId: tPie.id, role: "PIE_SUPPORT", assignedBlocks: 2 }], { requiresConsecutiveBlocks: true });
+  // Apoyo PIE: 2 de 6 bloques; uno de ellos en el Aula de Recursos (el titular sigue en la sala del curso)
+  await assignCS(c8BA.id, mat.id, 6, [{ teacherId: tMat.id }, { teacherId: tPie.id, role: "PIE_SUPPORT", assignedBlocks: 2, resourceRoomBlocks: 1 }], { requiresConsecutiveBlocks: true });
   await assignCS(c8BA.id, len.id, 6, [{ teacherId: tLen.id }], { requiresConsecutiveBlocks: true });
   await assignCS(c8BA.id, cie.id, 4, [{ teacherId: tCie.id }], { requiresConsecutiveBlocks: true });
   await assignCS(c8BA.id, his.id, 3, [{ teacherId: tHis.id }]);
